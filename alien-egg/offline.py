@@ -54,6 +54,7 @@ def _get_trained_model(
     meta=None,
     scores=None,
     threads=None,
+    ident=None,
     **kwargs,
 ):
     if meta is None:
@@ -61,7 +62,7 @@ def _get_trained_model(
     if threads:
         torch.set_num_threads(threads)
     meta = meta.copy()
-    meta["ident"] = kwargs.pop("ident", "")
+    meta["ident"] = ident
     meta.update({f"est__{k}": v for k, v in kwargs.items()})
     n = X_train.max() + 1
 
@@ -78,6 +79,6 @@ def _get_trained_model(
     }
     meta.update(_update)
 
-    est = Embedding(n=n, d=d, **kwargs)
-    est.fit(X_train, X_test, scores=scores)
+    est = Embedding(n=n, d=d, ident=ident, **kwargs)
+    est.fit(X_train, X_test)
     return est, meta

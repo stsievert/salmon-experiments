@@ -76,14 +76,15 @@ class SalmonExperiment(BaseEstimator):
             "samplers": sampler,
             "targets": list(range(self.n)),
         }
-        if not self.init:
-            self.config = init
-            return self
-        httpx.post(
+        #  if not self.init:
+            #  self.config = init
+            #  return self
+        r = httpx.post(
             self.salmon + "/init_exp",
             data={"exp": yaml.dump(init)},
             auth=("username", "password"),
         )
+        assert r.status_code == 200, (r.status_code, r.text)
 
         self.config = init
         return self
@@ -205,11 +206,10 @@ class User(BaseEstimator):
         if not hasattr(self, "initialized_") or not self.initialized_:
             self.init()
 
+        await asyncio.sleep(5)
         for k in range(self.n_responses):
             try:
                 datum = {"num_responses": k, "puid": self.uid, "salmon": self.salmon}
-                sleep_time = self.random_state_.uniform(0, 5)
-                await asyncio.sleep(sleep_time)
 
                 _s = time()
                 r = await self.http.get(self.salmon + "/query", timeout=20)
@@ -270,7 +270,8 @@ async def main(**config):
     kwargs = {
         k: config[k] for k in ["random_state", "dataset", "n", "d", "init", "alg"]
     }
-    exp = SalmonExperiment(**kwargs).initialize()
+    exp = SalmonExperiment(**kwargs)
+    exp.initialize()
 
     n_responses = (config["max_queries"] // config["n_users"]) + 1
 
@@ -313,7 +314,7 @@ def _ident(d: dict) -> str:
 
 if __name__ == "__main__":
     config = {
-        "n": 50,
+        "n": 30,
         "d": 2,
         "R": 10,
         "dataset": "alien_eggs",
@@ -322,11 +323,11 @@ if __name__ == "__main__":
         "reaction_time": 0.25,
         "response_time": 1.00,
         "init": True,
-        "n_users": 6,
-        #  "alg": "RR",
-        #  "max_queries": 30_000 + 100,
-        "alg": "RandomSampling",
-        "max_queries": 1_000_000 + 100,
+        "n_users": 10,
+        "alg": "RR",
+        "max_queries": 30_000 + 100,
+        #  "alg": "RandomSampling",
+        #  "max_queries": 100_000 + 100,
     }
     ## Make sure no data has been uploaded
     r = httpx.get(SALMON + "/", timeout=20)

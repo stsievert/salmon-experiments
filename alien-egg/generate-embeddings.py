@@ -26,7 +26,7 @@ import offline
 def _check_version():
     import salmon
 
-    assert "v0.4.5+28" in salmon.__version__
+    assert "v0.5.0+12" in salmon.__version__
     return True
 
 
@@ -77,9 +77,9 @@ def _prep():
 
 if __name__ == "__main__":
 
-    DIR = Path("io/2021-01-22/responses")
+    DIR = Path("io/2021-02-16/responses")
     noise = "human"
-    n = 50
+    n = 30
     dfs = {
         f.name.replace(".csv", ""): pd.read_csv(f)
         for f in DIR.glob("*.csv")
@@ -122,12 +122,10 @@ if __name__ == "__main__":
     #  NUM_ANS.remove(r)
     NUM_ANS = [
         int(i * 1000)
-        for i in [0.5, 1, 1.5, 2, 3, 4, 5, 7.5, 10, 12.5, 15, 20, 23, 26]
+        for i in [0.3, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6, 7, 8, 9, 10]
     ]
 
-    N_ANS_RAND = [
-        i * 1000 for i in [30, 35, 40, 45, 50, 55, 60]
-    ]
+    N_ANS_RAND = [i * 1000 for i in [30, 35, 40, 45, 50, 55, 60]]
 
     _randoms = [k for k in dfs.keys() if "alg=RandomSampling" in k]
     assert len(_randoms) == 1
@@ -156,7 +154,7 @@ if __name__ == "__main__":
     assert all(d), d
     print(d)
     threads = d[0]
-    static = dict(X_test=X_test, d=2, max_epochs=1_000_000, threads=threads)
+    static = dict(X_test=X_test, d=2, max_epochs=10_000, threads=threads, dwell=500)
 
     r_dataset = client.scatter(datasets[_random])
     random_futures = [
@@ -168,11 +166,10 @@ if __name__ == "__main__":
             shuffle=True,
             noise_model=nm,
             ident=f"random-{nm}",
-            dwell=1,
             **static,
         )
         for n_ans in NUM_ANS + N_ANS_RAND
-        for nm in ["TSTE", "SOE", "CKL"]
+        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 
     _actives = [k for k in dfs.keys() if "alg=RR" in k]
@@ -186,13 +183,12 @@ if __name__ == "__main__":
             n_responses=n_ans,
             meta={"noise_model": nm, **_get_dict(_active)},
             noise_model=nm,
-            shuffle=False,
+            shuffle=True,
             ident=f"active-{nm}",
-            dwell=20,
             **static,
         )
         for n_ans in NUM_ANS
-        for nm in ["TSTE", "SOE", "CKL"]
+        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 
     futures = random_futures + active_futures
