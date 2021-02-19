@@ -1,13 +1,12 @@
-from typing import List, Dict, Any, Union
-import numpy as np
-from typing import Dict, Any
 from numbers import Number as NumberType
-import torch
-from scipy.spatial import procrustes
-import numpy.linalg as LA
+from typing import Any, Dict, List, Union
 
+import numpy as np
+import numpy.linalg as LA
+import torch
 from salmon.triplets.algs import CKL as RunnerCKL
 from salmon.triplets.algs.adaptive import CKL
+from scipy.spatial import procrustes
 
 Number = Union[int, float, NumberType]
 

@@ -1,15 +1,17 @@
-from typing import Tuple, Dict, List, Union
-import json
-import numpy as np
-from copy import deepcopy
 import asyncio
-import yaml
+import json
+from copy import deepcopy
+from pathlib import Path
 from time import time
+from typing import Dict, List, Tuple, Union
+
+import httpx
+import numpy as np
+import pandas as pd
+import yaml
+from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split
 from sklearn.utils import check_random_state
-from sklearn.base import BaseEstimator
-import httpx
-import pandas as pd
 
 import stats
 
@@ -26,7 +28,7 @@ class ExpStats:
 
         await asyncio.sleep(5)
         while True:
-            deadline = time() + 60
+            deadline = time() + 10
             responses = await self.collect()
             alg = "RR"  # config["alg"]
             r = await self._get_endpoint(f"/model/{alg}", base=SALMON_BACKEND)
@@ -71,19 +73,19 @@ async def _get_responses(http, base=SALMON):
     return r.json()
 
 
-def init(module, n=85, d=2, random_state=None, alg="RR", server=SALMON):
+def init(module, n=85, d=2, R=1, random_state=None, alg="RR", server=SALMON):
     _seed = check_random_state(random_state).randint(2 ** 32 - 1)
     seed = int(_seed)
     if alg not in ["RR", "RandomSampling"]:
         raise ValueError(f"alg={alg} not in ['RR', 'RandomSampling']")
-    sampler = {"RR": {"random_state": seed, "module": module}}
+    sampler = {"RR": {"module": module, "R": R}}
     if alg == "RandomSampling":
         sampler["RR"]["sampling"] = "random"
 
     init = {
         "d": d,
         "samplers": sampler,
-        "targets": list(range(n)),
+        "targets": config["n"],
     }
     print("Resetting...")
     httpx.post(
@@ -180,13 +182,8 @@ class User(BaseEstimator):
 
 async def main(config, X_train, X_test):
     assert config["n"] == len(np.unique(X_train))
-    init(
-        config["module"],
-        n=config["n"],
-        d=config["d"],
-        random_state=config["random_state"],
-        alg=config["sampler"],
-    )
+    kwargs = {k: config[k] for k in ["n", "d", "R"]}
+    init(config["module"], alg=config["sampler"], **kwargs)
     completed = asyncio.Event()
     stat = ExpStats()
     task = asyncio.create_task(stat.run_until(X_test, completed, config=config))
@@ -210,15 +207,16 @@ async def main(config, X_train, X_test):
 
 
 if __name__ == "__main__":
-    # TODO: pass `module="CKL"` to Salmon
     config = {
         "n": 85,
-        "d": 2,
-        "random_state": 42,
+        "d": 3,
+        "R": 1,
+        #  "sampler": "RR",
+        #  "max_responses": 40_000,
         "sampler": "RandomSampling",
-        "n_users": 3,
-        "max_responses": 100_000,
-        "response_time": 2.5,
+        "max_responses": 60_000,
+        "n_users": 5,
+        "response_time": 2.0,
         "module": "CKL",
     }
     config["ident"] = config["sampler"]

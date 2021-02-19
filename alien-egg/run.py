@@ -43,8 +43,7 @@ class SalmonExperiment(BaseEstimator):
         dataset="strange_fruit",
         n=200,
         d=2,
-        R=10,
-        random_state=None,
+        R=1,
         init=True,
         alg="RR",
     ):
@@ -53,12 +52,10 @@ class SalmonExperiment(BaseEstimator):
         self.n = n
         self.d = d
         self.R = R
-        self.random_state = random_state
         self.init = init
         self.alg = alg
 
     def initialize(self):
-        self.random_state_ = check_random_state(self.random_state)
         if self.init:
             httpx.get(
                 self.salmon + "/reset?force=1",
@@ -67,7 +64,7 @@ class SalmonExperiment(BaseEstimator):
             )
         if self.alg not in ["RR", "RandomSampling"]:
             raise ValueError(f"alg={self.alg} not in ['RR', 'RandomSampling']")
-        sampler = {"RR": {"random_state": self.random_state, "R": self.R}}
+        sampler = {"RR": {"R": self.R}}
         if self.alg == "RandomSampling":
             sampler["RR"]["sampling"] = "random"
 
@@ -134,7 +131,7 @@ class Stats:
         X_test = _X_test(n, num=20_000, noise=config["noise"])
         ident = _ident(config)
         while True:
-            deadline = time() + 60
+            deadline = time() + 10
             responses = await self.collect()
             alg = "RR"  # config["alg"]
             r = await self._get_endpoint(f"/model/{alg}", base=SALMON_BACKEND)
@@ -159,7 +156,7 @@ class Stats:
             if event.is_set():
                 break
             while time() < deadline:
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
 
         return history
 
@@ -268,7 +265,7 @@ class User(BaseEstimator):
 
 async def main(**config):
     kwargs = {
-        k: config[k] for k in ["random_state", "dataset", "n", "d", "init", "alg"]
+        k: config[k] for k in ["dataset", "n", "d", "init", "alg", "R"]
     }
     exp = SalmonExperiment(**kwargs)
     exp.initialize()
@@ -316,18 +313,18 @@ if __name__ == "__main__":
     config = {
         "n": 30,
         "d": 2,
-        "R": 10,
+        "R": 1,
         "dataset": "alien_eggs",
         "noise": "human",
         "random_state": 42,
         "reaction_time": 0.25,
         "response_time": 1.00,
         "init": True,
-        "n_users": 10,
-        "alg": "RR",
-        "max_queries": 30_000 + 100,
-        #  "alg": "RandomSampling",
-        #  "max_queries": 100_000 + 100,
+        "n_users": 3,
+        #  "alg": "RR",
+        #  "max_queries": 10_000 + 100,
+        "alg": "RandomSampling",
+        "max_queries": 20_000 + 100,
     }
     ## Make sure no data has been uploaded
     r = httpx.get(SALMON + "/", timeout=20)

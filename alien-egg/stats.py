@@ -77,6 +77,10 @@ def _get_acc(embedding: np.ndarray, X: np.ndarray) -> float:
 
 
 def _get_nn_diffs(embedding) -> Tuple[float, np.ndarray]:
+    """
+    Get the NN accuracy and the number of objects that are closer than the
+    true NN.
+    """
     dists = gram_utils.distances(gram_utils.gram_matrix(embedding))
     dists[dists <= 0] = np.inf
     neighbors = dists.argmin(axis=1)

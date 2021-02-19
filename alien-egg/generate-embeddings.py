@@ -26,7 +26,7 @@ import offline
 def _check_version():
     import salmon
 
-    assert "v0.5.0+12" in salmon.__version__
+    assert "v0.5.0+6.g2" in salmon.__version__
     return True
 
 
@@ -115,17 +115,26 @@ if __name__ == "__main__":
     print([len(v) for v in datasets.values()])
     assert len(datasets) == 2
 
-    #  _NUM_ANS = [[1 * p, 2 * p, 4 * p, 5 * p, 8 * p] for p in [100, 1000]]
-    #  NUM_ANS: List[int] = sum(_NUM_ANS, [])
-    #  NUM_ANS += [300, 600, 700, 10_000]
-    #  for r in [100]:
-    #  NUM_ANS.remove(r)
     NUM_ANS = [
-        int(i * 1000)
-        for i in [0.3, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6, 7, 8, 9, 10]
+        300,
+        500,
+        750,
+        1250,
+        1500,
+        1750,
+        2000,
+        2500,
+        3000,
+        3500,
+        4000,
+        4500,
+        5000,
+        6000,
+        7000,
+        8000,
+        9000,
+        10_000,
     ]
-
-    N_ANS_RAND = [i * 1000 for i in [30, 35, 40, 45, 50, 55, 60]]
 
     _randoms = [k for k in dfs.keys() if "alg=RandomSampling" in k]
     assert len(_randoms) == 1
@@ -154,7 +163,7 @@ if __name__ == "__main__":
     assert all(d), d
     print(d)
     threads = d[0]
-    static = dict(X_test=X_test, d=2, max_epochs=10_000, threads=threads, dwell=500)
+    static = dict(X_test=X_test, d=2, max_epochs=500_000, threads=threads, dwell=500)
 
     r_dataset = client.scatter(datasets[_random])
     random_futures = [
@@ -168,7 +177,7 @@ if __name__ == "__main__":
             ident=f"random-{nm}",
             **static,
         )
-        for n_ans in NUM_ANS + N_ANS_RAND
+        for n_ans in NUM_ANS
         for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 

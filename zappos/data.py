@@ -1,7 +1,7 @@
-import pandas as pd
-import numpy as np
-from typing import Tuple, List
+from typing import List, Tuple
 
+import numpy as np
+import pandas as pd
 from sklearn.utils import check_random_state
 
 Query = Tuple[int, int, int]
