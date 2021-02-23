@@ -87,9 +87,9 @@ if __name__ == "__main__":
     }
     assert len(dfs) == 2
 
-    keys = [k for k in dfs.keys() if "alg=RandomSampling" in k]
-    assert len(keys) == 1, keys
-    key = keys[0]
+    _keys = [k for k in dfs.keys() if "alg=RR" in k]
+    assert len(_keys) == 1, _keys
+    _key = _keys[0]
     print([len(df) for df in dfs.values()])
 
     ## Get test set from random responses
@@ -100,8 +100,8 @@ if __name__ == "__main__":
     print([len(df) for df in dfs.values()])
 
     ## Set same initial questions
-    limit = 10 * n
-    initial = dfs[key].iloc[:limit]
+    limit = 1 * n
+    initial = dfs[_key].iloc[:limit]
     for k, df in dfs.items():
         if k == "test":
             continue
@@ -116,24 +116,12 @@ if __name__ == "__main__":
     assert len(datasets) == 2
 
     NUM_ANS = [
-        300,
-        500,
-        750,
-        1250,
-        1500,
-        1750,
-        2000,
-        2500,
-        3000,
-        3500,
-        4000,
-        4500,
-        5000,
-        6000,
-        7000,
-        8000,
-        9000,
-        10_000,
+        n * i
+        for i in list(range(1, 30))
+        + list(range(30, 60, 2))
+        + list(range(60, 90, 5))
+        + list(range(90, 200, 10))
+        + list(range(200, 333, 20))
     ]
 
     _randoms = [k for k in dfs.keys() if "alg=RandomSampling" in k]
@@ -215,5 +203,5 @@ if __name__ == "__main__":
         _show = {k: est.history_[-1][k] for k in ["score_test", "loss_test"]}
         show = {k: f"{v:0.3f}" for k, v in _show.items()}
         print(i, meta["alg"], meta["ident"], meta["n_train"], show)
-        with open(f"/scratch/ssievert/io/{i}.msgpack", "wb") as f2:
+        with open(f"/scratch/ssievert/io/alien-eggs/{i}.msgpack", "wb") as f2:
             msgpack.dump(save, f2)
