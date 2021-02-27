@@ -5,4 +5,4 @@ up:
 	rsync -v -r $(EXCLUDE) ~/Developer/stsievert/salmon/ $(DNS):~/salmon/
 
 down:
-	scp -r $(DNS):/scratch/ssievert/io/io.zip _down/
+	scp -r $(DNS):/scratch/ssievert/io/alien-eggs/io.zip _down/
