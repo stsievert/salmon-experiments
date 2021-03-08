@@ -139,6 +139,9 @@ if __name__ == "__main__":
         verbose=200,
         shuffle=True,
     )
+    # NOTE on 2021-02-26: mu=0.05 had not-so-great perf with adaptive
+    # sampling. Probably worse than random.
+
     #  offline._get_trained_model(
     #  datasets[_random],
     #  n_responses=10_000,
