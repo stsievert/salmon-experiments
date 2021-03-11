@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # coding: utf-8
 import sys
-from typing import List
+from typing import List, Any, Dict, Union
 from ast import literal_eval
 from pathlib import Path
 from typing import Tuple
 import json
+import yaml
 
 import pandas as pd
 from dask.distributed import Client
@@ -19,14 +20,14 @@ for path in [
 ]:
     sys.path.append(str(path / "examples"))
 
-from run import _X_test
+import run
 import offline
 
 
 def _check_version():
     import salmon
 
-    assert "v0.5.0+12" in salmon.__version__
+    assert "v0.5.2+3" in salmon.__version__
     return True
 
 
@@ -47,11 +48,6 @@ def _ident(d: dict) -> str:
     d2 = sorted(tuple(d.items()))
     d3 = [f"{k}={v}" for k, v in d2]
     return "-".join(d3)
-
-
-def _get_responses(f: Path) -> Tuple[pd.DataFrame, dict]:
-    df = pd.read_csv(f)
-    ident = f.name.replace("responses:", "").replace(".csv", "")
 
 
 def _serialize(d):
@@ -75,82 +71,89 @@ def _prep():
     return threads
 
 
+def _flatten(d, prefix=""):
+    if isinstance(d, (int, str, bytes, float)):
+        return d
+    elif isinstance(d, dict):
+        return {k: _flatten(v, prefix=f"{k}__") for k, v in d.items()}
+    elif isinstance(d, (list, tuple)):
+        raise ValueError()
+    raise ValueError()
+
+
+def _get_kwargs(nm: str) -> Dict[str, Any]:
+    # From section 3.2 of NEXT paper (last full paragraph on page 6)
+    if nm == "CKL":
+        return {"module__mu": 0.05}
+
+    assert nm in ("SOE", "GNMDS", "TSTE")
+    return {}
+
+
+def _get_config(suffix: str):
+    with open(DIR / f"config_{suffix}.yaml") as f:
+        raw = yaml.safe_load(f)
+    raw.pop("targets")
+    rare = _flatten(raw)
+    return rare
+
 if __name__ == "__main__":
 
-    DIR = Path("io/2021-02-17/responses")
+    DIR = Path("io/2021-03-09/")
     noise = "human"
     n = 30
     dfs = {
         f.name.replace(".csv", ""): pd.read_csv(f)
-        for f in DIR.glob("*.csv")
+        for f in DIR.glob("responses_*.csv")
         if "test" not in f.name
     }
-    assert len(dfs) == 2
-
-    _keys = [k for k in dfs.keys() if "alg=RR" in k]
-    assert len(_keys) == 1, _keys
-    _key = _keys[0]
     print([len(df) for df in dfs.values()])
+    assert len(dfs) == 2
+    assert set(dfs.keys()) == {"responses_RR", "responses_RandomSampling"}
 
     ## Get test set from random responses
     #  test_size = int(0.2 * len(dfs[key]))
     #  dfs["test"] = dfs[key].iloc[-test_size:].copy()
     #  dfs[key] = dfs[key].iloc[:-test_size].copy()
 
-    print([len(df) for df in dfs.values()])
-
     ## Set same initial questions
     limit = 1 * n
-    initial = dfs[_key].iloc[:limit]
+    initial = dfs["responses_RR"].iloc[:limit]
     for k, df in dfs.items():
-        if k == "test":
-            continue
         df.iloc[:limit] = initial.copy()
     assert all((df.iloc[:limit].score <= -1000).all() for df in dfs.values())
 
     cols = ["head", "winner", "loser"]
     datasets = {k: df[cols].to_numpy() for k, df in dfs.items()}
     print([len(v) for v in datasets.values()])
-    X_test = _X_test(n, num=20_000, noise=noise)
+    X_test = run._X_test()
+
     print([len(v) for v in datasets.values()])
     assert len(datasets) == 2
 
     NUM_ANS = [
         n * i
-        for i in list(range(1, 30))
-        + list(range(30, 60, 2))
-        + list(range(60, 90, 5))
-        + list(range(90, 200, 10))
-        + list(range(200, 333, 20))
+        for i in list(range(1, 30, 5))
+        + list(range(30, 130, 10))
+        + list(range(130, 333, 20))
     ]
-
-    _randoms = [k for k in dfs.keys() if "alg=RandomSampling" in k]
-    assert len(_randoms) == 1
-    _random = _randoms[0]
-    #  datasets[_random] = _X_test(n, num=30_000, seed=10**6)
-    print([len(v) for v in datasets.values()])
 
     static = dict(
         X_test=X_test,
         d=2,
-        max_epochs=1_000_000,
+        max_epochs=20_000,
         dwell=100,
-        module__mu=0.05,
         verbose=200,
-        shuffle=True,
     )
-    # NOTE on 2021-02-26: mu=0.05 had not-so-great perf with adaptive
-    # sampling. Probably worse than random.
-
     #  offline._get_trained_model(
-    #  datasets[_random],
-    #  n_responses=10_000,
-    #  meta=_get_dict(_random),
-    #  shuffle=True,
-    #  noise_model="CKL",
-    #  **static,
+        #  datasets["responses_RandomSampling"],
+        #  n_responses=10_000,
+        #  meta=_get_config("RandomSampling"),
+        #  noise_model="CKL",
+        #  module__mu=0.05,
+        #  **static,
     #  )
-    #  sys.exit(1)
+    #  sys.exit(0)
     #  breakpoint()
 
     client = Client("localhost:8786")
@@ -164,39 +167,40 @@ if __name__ == "__main__":
     print(d)
     static["threads"] = d[0]
 
-    r_dataset = client.scatter(datasets[_random])
+    r_dataset = client.scatter(datasets["responses_RandomSampling"])
+    #  r_dataset = datasets["responses_RandomSampling"]
     random_futures = [
         client.submit(
             offline._get_trained_model,
             r_dataset,
             n_responses=n_ans,
-            meta=_get_dict(_random),
+            meta=_get_config("RandomSampling"),
             noise_model=nm,
             ident=f"random-{nm}",
+            alg="random",
             **static,
+            **_get_kwargs(nm),
         )
         for n_ans in NUM_ANS
-        for nm in ["CKL"]
-        #  for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
+        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 
-    _actives = [k for k in dfs.keys() if "alg=RR" in k]
-    assert len(_actives) == 1, len(_actives)
-    _active = _actives[0]
-    a_dataset = client.scatter(datasets[_active])
+    a_dataset = client.scatter(datasets["responses_RR"])
+    #  a_dataset = datasets["responses_RR"]
     active_futures = [
         client.submit(
             offline._get_trained_model,
             a_dataset,
             n_responses=n_ans,
-            meta={"noise_model": nm, **_get_dict(_active)},
+            meta=_get_config("RR"),
             noise_model=nm,
             ident=f"active-{nm}",
+            alg="active",
             **static,
+            **_get_kwargs(nm),
         )
         for n_ans in NUM_ANS
-        for nm in ["CKL"]
-        #  for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
+        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 
     futures = random_futures + active_futures

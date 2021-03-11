@@ -10,6 +10,7 @@ import pandas as pd
 from pathlib import Path
 from dask.distributed import Client, as_completed
 import torch
+import numpy as np
 
 import dask
 from sklearn.model_selection import train_test_split
@@ -48,13 +49,16 @@ def _get_unique(col: pd.Series):
 
 
 def _get_trained_model(
-    X_train, X_test,
+    X_train,
+    X_test,
     n_responses=None,
     d=2,
     meta=None,
     scores=None,
     threads=None,
     ident=None,
+    noise_model=None,
+    alg=None,
     **kwargs,
 ):
     if meta is None:
@@ -76,6 +80,10 @@ def _get_trained_model(
         "n": n,
         "d": d,
         "n_responses": n_responses,
+        "noise_model": noise_model,
+        "ident": ident,
+        "threads": threads,
+        "alg": alg,
     }
     meta.update(_update)
 

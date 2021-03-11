@@ -13,7 +13,7 @@ The following stats are collected:
 """
 
 from time import time
-from typing import Tuple, Union, Dict
+from typing import Tuple, Union, Dict, List
 from numbers import Number as NumberType
 
 import numpy as np
@@ -27,17 +27,20 @@ from salmon.triplets.algs import TSTE
 ArrayLike = Union[list, np.ndarray]
 
 
-def collect(embedding: ArrayLike, X_test: ArrayLike) -> Dict[str, float]:
+def collect(
+    embedding: ArrayLike, targets: List[int], X_test: ArrayLike
+) -> Dict[str, float]:
     embedding = np.asarray(embedding)
     X_test = np.asarray(X_test)
 
     accuracy = _get_acc(embedding, X_test)
-    nn_acc, nn_diffs = _get_nn_diffs(embedding)
+    nn_acc, nn_diffs = _get_nn_diffs(embedding, targets)
 
     diff_stats = {
         f"nn_diff_p{k}": np.percentile(nn_diffs, k)
         for k in [99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 1]
     }
+    nn_dists = {f"nn_diff_{k}": (nn_diffs <= k).mean() for k in range(30)}
 
     n, d = embedding.shape
     stats = {}
@@ -60,6 +63,7 @@ def collect(embedding: ArrayLike, X_test: ArrayLike) -> Dict[str, float]:
         "nn_acc": nn_acc,
         **diff_stats,
         **stats,
+        **nn_dists,
     }
 
 
@@ -76,14 +80,24 @@ def _get_acc(embedding: np.ndarray, X: np.ndarray) -> float:
     return acc
 
 
-def _get_nn_diffs(embedding) -> Tuple[float, np.ndarray]:
+def _get_nn_diffs(embedding, targets: List[int]) -> Tuple[float, np.ndarray]:
     """
     Get the NN accuracy and the number of objects that are closer than the
     true NN.
     """
+    true_nns = []
+    t = np.array(targets)
+    for ti in targets:
+        true_dist = np.abs(t - ti).astype("float32")
+        true_dist[true_dist <= 0] = np.inf
+        true_nns.append(true_dist.argmin())
+    true_nns = np.array(true_nns).astype("int")
+
     dists = gram_utils.distances(gram_utils.gram_matrix(embedding))
     dists[dists <= 0] = np.inf
+
     neighbors = dists.argmin(axis=1)
-    neighbor_dists = np.abs(neighbors - np.arange(len(neighbors)))
-    nn_acc = (neighbor_dists == 1).mean()
+    neighbor_dists = np.abs(neighbors - true_nns)
+    nn_acc = (neighbor_dists == 0).mean()
+    print(nn_acc, np.median(neighbor_dists), neighbor_dists.mean())
     return nn_acc, neighbor_dists

@@ -10,7 +10,9 @@ import json
 import sys
 from pathlib import Path
 from time import time
-from typing import Optional, Tuple, Union, Dict, List
+from typing import Optional, Tuple, Union, Dict, List, Any
+from datetime import datetime
+from copy import deepcopy
 
 import httpx
 import numpy as np
@@ -22,6 +24,8 @@ from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 
 import stats
+
+datetime_parser = lambda t: datetime.strptime(t, "%Y-%m-%d %H:%M:%S.%f")
 
 for path in [
     Path.home() / "Developer" / "stsievert" / "salmon",
@@ -71,19 +75,21 @@ class SalmonExperiment(BaseEstimator):
         init = {
             "d": self.d,
             "samplers": sampler,
-            "targets": list(range(self.n)),
         }
-        #  if not self.init:
-            #  self.config = init
-            #  return self
+        eggs = Path(__file__).parent / "io" / "alienegg30.zip"
+        assert eggs.exists()
         r = httpx.post(
             self.salmon + "/init_exp",
             data={"exp": yaml.dump(init)},
+            files={"targets": eggs.read_bytes()},
             auth=("username", "password"),
+            timeout=10,
         )
         assert r.status_code == 200, (r.status_code, r.text)
 
-        self.config = init
+        r = httpx.get(self.salmon + "/config", auth=("username", "password"))
+        assert r.status_code == 200, (r.status_code, r.text)
+        self.config = r.json()
         return self
 
 
@@ -93,43 +99,113 @@ def _random_query(n: int, random_state=None) -> List[int]:
     return [int(h), int(l), int(r)]
 
 
-def _answer(
-    query: Union[List[int], dict], noise="constant", p_wrong=P_WRONG, random_state=None
-) -> List[int]:
-    if isinstance(query, dict):
-        h, l, r = (query[k] for k in ["head", "left", "right"])
-    else:
-        h, l, r = query
+def _answer(query: Tuple[int, int, int], random_state=None,) -> int:
+    h, l, r = query
     dl = abs(h - l)
     dr = abs(h - r)
 
-    if noise == "constant":
-        winner, loser = (l, r) if dl < dr else (r, l)
-        ans = [h, winner, loser]
-        if check_random_state(random_state).uniform(0, 1) < p_wrong:
-            ans = [h, loser, winner]
-    elif noise == "human":
-        winner_idx = datasets.alien_egg(h, l, r)
-        winner, loser = (l, r) if winner_idx == 0 else (r, l)
-        ans = [h, winner, loser]
-    else:
-        raise ValueError("noise='{noise}' not in ['human', 'constant']")
-    return ans
+    winner_idx = datasets.alien_egg(h, l, r)
+    return winner_idx
 
 
-def _X_test(n: int, num: int = 10_000, seed=0, **kwargs) -> np.ndarray:
-    queries = [_random_query(n, random_state=i + seed) for i in range(num)]
-    answers = [
-        _answer(query, random_state=i, **kwargs) for i, query in enumerate(queries)
-    ]
-    return np.asarray(answers)
+def _flatten_query(q: Dict[str, Any]) -> Optional[Dict[str, Union[int, datetime]]]:
+    if "index_winner" not in q:
+        return None
+    sent = {
+        d["label"] if d["label"] != "center" else "head": d["index"]
+        for d in q["target_indices"]
+    }
+    t = q["timestamp_query_generated"]
+    dt = q["response_time"]
+    label = q["alg_label"]
+    return {
+        "winner": q["index_winner"],
+        "timestamp": datetime_parser(t),
+        "alg": label,
+        "response_time": dt,
+        **sent,
+    }
+
+
+def _munge(fname: str) -> pd.DataFrame:
+    with open(fname, "r") as f:
+        raw = json.load(f)
+
+    assert raw.pop("meta") == {"status": "OK", "code": 200}
+    assert len(raw) == 1
+    rare = raw["participant_responses"]
+    mrare = sum(rare.values(), [])
+    medium = [_flatten_query(d) for d in mrare]
+    mwell = [m for m in medium if m]
+    df = pd.DataFrame(mwell)
+    cols = ["head", "left", "right", "winner", "alg", "timestamp", "response_time"]
+    assert set(df.columns) == set(cols)
+    df["loser"] = df[["head", "left", "right", "winner"]].apply(
+        lambda r: r["left"] if r["winner"] == r["right"] else r["right"], axis=1
+    )
+    return df[cols + ["loser"]]
+
+
+def _get_targets():
+    """
+    Inputs: none
+    Outputs: list of fnames: ['i0126.png', 'i0208.png', ...]
+    """
+    today = datetime.now().isoformat()[:10]
+    if today != "2021-03-10":
+        raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
+    DIR = Path("io/2021-03-09/")
+    suffix = "RandomSampling"
+    with open(DIR / f"config_{suffix}.yaml") as f:
+        config = yaml.safe_load(f)
+
+    rare = [t.split("/")[-2] for t in config["targets"]]
+    mrare = [t.strip("'\" ") for t in rare]
+    return mrare
+
+
+def _X_test(targets: List[str] = None) -> np.ndarray:
+    df = _munge("io/next-fig3.json.static")
+    cols = ["head", "winner", "loser"]
+    X_next_idx = df.loc[df.alg == "Test", cols].to_numpy()
+    # fmt: off
+    idx_fname = {
+        0:  "i0126.png", 1:  "i0208.png", 2:  "i0076.png", 3:  "i0326.png",
+        4:  "i0526.png", 5:  "i0322.png", 6:  "i0312.png", 7:  "i0036.png",
+        8:  "i0414.png", 9:  "i0256.png", 10: "i0074.png", 11: "i0050.png",
+        12: "i0470.png", 13: "i0022.png", 14: "i0430.png", 15: "i0254.png",
+        16: "i0572.png", 17: "i0200.png", 18: "i0524.png", 19: "i0220.png",
+        20: "i0438.png", 21: "i0454.png", 22: "i0112.png", 23: "i0494.png",
+        24: "i0194.png", 25: "i0152.png", 26: "i0420.png", 27: "i0142.png",
+        28: "i0114.png", 29: "i0184.png",
+    }
+    # fmt: on
+    spikes = {
+        next_idx: int(fname.strip("i.png")) for next_idx, fname in idx_fname.items()
+    }
+
+    # These are the NEXT targets by filename
+    X_spikes = np.vectorize(spikes.get)(X_next_idx)
+
+    if targets is None:
+        targets = _get_targets()
+    assert len(targets) == len(idx_fname)
+    spike_idx = {
+        int(fname.strip("i.png")): salmon_idx
+        for salmon_idx, fname in enumerate(targets)
+    }
+    # Make sure the spikes on both sides are the same
+    assert set(spike_idx.keys()) == set(np.unique(X_spikes))
+    assert set(spike_idx.keys()) == set(spikes.values())
+    X_salmon = np.vectorize(spike_idx.get)(X_spikes)
+    return X_salmon
 
 
 class Stats:
-    async def run_until(self, n, event, *, config):
+    async def run_until(self, n, event, *, config, targets):
         history = []
-        X_test = _X_test(n, num=20_000, noise=config["noise"])
-        ident = _ident(config)
+        X_test = _X_test()
+        ident = config["alg"]
         while True:
             deadline = time() + 10
             responses = await self.collect()
@@ -137,9 +213,9 @@ class Stats:
             r = await self._get_endpoint(f"/model/{alg}", base=SALMON_BACKEND)
             if r.status_code == 200:
                 d = r.json()
-                stat = stats.collect(d["embedding"], X_test)
+                stat = stats.collect(d["embedding"], targets, X_test)
                 history.append({"n_responses": len(responses), **config, **stat})
-                pd.DataFrame(history).to_csv(f"history*{ident}.csv")
+                pd.DataFrame(history).to_csv(f"history_{ident}.csv")
             else:
                 print(r.text)
 
@@ -150,8 +226,7 @@ class Stats:
                 if k == "response_time":
                     k = "response_time_mean"
                 df[k] = v
-            ident = _ident(config)
-            df.to_csv(f"responses*{ident}.csv")
+            df.to_csv(f"responses_{ident}.csv")
 
             if event.is_set():
                 break
@@ -175,8 +250,9 @@ class Stats:
 class User(BaseEstimator):
     def __init__(
         self,
+        *,
+        targets: List[str],
         salmon=SALMON,
-        noise="human",
         n_responses=100,
         response_time=1,
         reaction_time=0.75,
@@ -189,9 +265,9 @@ class User(BaseEstimator):
         self.n_responses = n_responses
         self.random_state = random_state
         self.reaction_time = reaction_time
-        self.noise = noise
         self.http = http
         self.uid = uid
+        self.targets = targets
 
     def init(self):
         self.initialized_ = True
@@ -204,6 +280,7 @@ class User(BaseEstimator):
             self.init()
 
         await asyncio.sleep(5)
+
         for k in range(self.n_responses):
             try:
                 datum = {"num_responses": k, "puid": self.uid, "salmon": self.salmon}
@@ -215,14 +292,12 @@ class User(BaseEstimator):
 
                 query = r.json()
 
-                h = query["head"]
-                l = query["left"]
-                r = query["right"]
-                dl = abs(h - l)
-                dr = abs(h - r)
+                h = self.targets[query["head"]]
+                l = self.targets[query["left"]]
+                r = self.targets[query["right"]]
 
-                _ans = _answer(query, noise=self.noise)
-                winner = _ans[1]
+                _ans = _answer((h, l, r))
+                winner = query["left"] if _ans == 0 else query["right"]
 
                 sleep_time = self.random_state_.normal(
                     loc=self.response_time, scale=0.25
@@ -236,14 +311,9 @@ class User(BaseEstimator):
                 }
                 w = answer["winner"]
                 if self.uid == "0":
-                    if w == l:
-                        msg = f"DL={dl}, dr={dr}. (h, l, r, w) = {(h, l, r, w)}"
-                    elif w == r:
-                        msg = f"DR={dr}, dl={dl}. (h, l, r, w) = {(h, l, r, w)}"
-                    else:
-                        raise ValueError(f"h, l, r, w = {(h, l, r, w)}")
+                    msg = f"(h, l, r, w) = {(h, l, r, w)}"
                     print(f"{msg}, score={answer['score']}")
-                datum.update({"h": h, "l": l, "r": r, "w": w, "dl": dl, "dr": dr})
+                datum.update({"h": h, "l": l, "r": r, "w": w})
                 datum.update({"time": time()})
                 await asyncio.sleep(sleep_time)
                 datum.update({"sleep_time": sleep_time})
@@ -263,19 +333,29 @@ class User(BaseEstimator):
         return self._partial_fit(X=X, y=y)
 
 
+def _fmt(x: str) -> int:
+    filename = x.split("/")[-2]
+    numeric = filename.strip("i.png' ")
+    return int(numeric)
+
+
 async def main(**config):
-    kwargs = {
-        k: config[k] for k in ["dataset", "n", "d", "init", "alg", "R"]
-    }
+    kwargs = {k: config[k] for k in ["dataset", "n", "d", "init", "alg", "R"]}
     exp = SalmonExperiment(**kwargs)
     exp.initialize()
 
+    exp.config["targets"] = [_fmt(t) for t in exp.config["targets"]]
+
     n_responses = (config["max_queries"] // config["n_users"]) + 1
 
-    kwargs = {k: config[k] for k in ["reaction_time", "response_time", "noise"]}
+    kwargs = {k: config[k] for k in ["reaction_time", "response_time"]}
     completed = asyncio.Event()
     stats = Stats()
-    task = asyncio.create_task(stats.run_until(config["n"], completed, config=config))
+    task = asyncio.create_task(
+        stats.run_until(
+            config["n"], completed, config=config, targets=exp.config["targets"]
+        )
+    )
     async with httpx.AsyncClient() as client:
         users = [
             User(
@@ -283,6 +363,7 @@ async def main(**config):
                 random_state=i,
                 uid=str(i),
                 n_responses=n_responses,
+                targets=exp.config["targets"],
                 **kwargs,
             )
             for i in range(config["n_users"])
@@ -315,16 +396,14 @@ if __name__ == "__main__":
         "d": 2,
         "R": 1,
         "dataset": "alien_eggs",
-        "noise": "human",
         "random_state": 42,
         "reaction_time": 0.25,
         "response_time": 1.00,
         "init": True,
         "n_users": 3,
         #  "alg": "RR",
-        #  "max_queries": 10_000 + 100,
         "alg": "RandomSampling",
-        "max_queries": 20_000 + 100,
+        "max_queries": 10_000 + 100,
     }
     ## Make sure no data has been uploaded
     r = httpx.get(SALMON + "/", timeout=20)
