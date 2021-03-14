@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 import sys
-from typing import List, Any, Dict, Union
+from typing import List, Any, Dict, Union, Optional
 from ast import literal_eval
 from pathlib import Path
 from typing import Tuple
@@ -90,31 +90,22 @@ def _get_kwargs(nm: str) -> Dict[str, Any]:
     return {}
 
 
-def _get_config(suffix: str):
+def _get_config(suffix: str, targets=False):
     with open(DIR / f"config_{suffix}.yaml") as f:
         raw = yaml.safe_load(f)
+    if targets:
+        return raw["targets"]
     raw.pop("targets")
     rare = _flatten(raw)
     return rare
 
-if __name__ == "__main__":
 
-    DIR = Path("io/2021-03-09/")
-    noise = "human"
-    n = 30
-    dfs = {
-        f.name.replace(".csv", ""): pd.read_csv(f)
-        for f in DIR.glob("responses_*.csv")
-        if "test" not in f.name
-    }
-    print([len(df) for df in dfs.values()])
-    assert len(dfs) == 2
-    assert set(dfs.keys()) == {"responses_RR", "responses_RandomSampling"}
-
-    ## Get test set from random responses
-    #  test_size = int(0.2 * len(dfs[key]))
-    #  dfs["test"] = dfs[key].iloc[-test_size:].copy()
-    #  dfs[key] = dfs[key].iloc[:-test_size].copy()
+def _get_futures(client, dfs, random_state: Optional[int] = None):
+    if random_state is not None:
+        for k, df in dfs.items():
+            if "RR" in k:
+                continue
+            df = df.sample(frac=1, random_state=random_state)
 
     ## Set same initial questions
     limit = 1 * n
@@ -125,41 +116,25 @@ if __name__ == "__main__":
 
     cols = ["head", "winner", "loser"]
     datasets = {k: df[cols].to_numpy() for k, df in dfs.items()}
+    html_targets = _get_config("RandomSampling", targets=True)
+    targets = [t.split("/")[-2].strip("i.png '") for t in html_targets]
+    datasets["responses_next"] = run._next_responses("RandomSampling", targets)
     print([len(v) for v in datasets.values()])
     X_test = run._X_test()
 
     print([len(v) for v in datasets.values()])
-    assert len(datasets) == 2
+    assert len(datasets) == 3
 
-    NUM_ANS = [
-        n * i
-        for i in list(range(1, 30, 5))
-        + list(range(30, 130, 10))
-        + list(range(130, 333, 20))
-    ]
+    NUM_ANS = [n * i for i in range(10, 140, 10) if 0 < n * i <= 4000]
 
     static = dict(
         X_test=X_test,
         d=2,
-        max_epochs=20_000,
         dwell=100,
         verbose=200,
+        random_state=random_state,
+        max_epochs=300_000,
     )
-    #  offline._get_trained_model(
-        #  datasets["responses_RandomSampling"],
-        #  n_responses=10_000,
-        #  meta=_get_config("RandomSampling"),
-        #  noise_model="CKL",
-        #  module__mu=0.05,
-        #  **static,
-    #  )
-    #  sys.exit(0)
-    #  breakpoint()
-
-    client = Client("localhost:8786")
-    client.upload_file("offline.py")
-    d = client.run(_check_version)
-    assert all(list(d.values()))
 
     d = client.run(_prep)
     d = list(d.values())
@@ -168,7 +143,26 @@ if __name__ == "__main__":
     static["threads"] = d[0]
 
     r_dataset = client.scatter(datasets["responses_RandomSampling"])
-    #  r_dataset = datasets["responses_RandomSampling"]
+    next_dataset = client.scatter(datasets["responses_next"])
+    a_dataset = client.scatter(datasets["responses_RR"])
+
+    next_futures = [
+        client.submit(
+            offline._get_trained_model,
+            next_dataset,
+            n_responses=n_ans,
+            meta=_get_config("RandomSampling"),
+            noise_model=nm,
+            ident=f"random-next-{nm}",
+            alg="random-next",
+            **static,
+            **_get_kwargs(nm),
+        )
+        for n_ans in NUM_ANS
+        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
+        if n_ans <= len(datasets["responses_next"])
+    ]
+
     random_futures = [
         client.submit(
             offline._get_trained_model,
@@ -185,8 +179,6 @@ if __name__ == "__main__":
         for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 
-    a_dataset = client.scatter(datasets["responses_RR"])
-    #  a_dataset = datasets["responses_RR"]
     active_futures = [
         client.submit(
             offline._get_trained_model,
@@ -202,8 +194,40 @@ if __name__ == "__main__":
         for n_ans in NUM_ANS
         for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
+    return random_futures + active_futures + next_futures
 
-    futures = random_futures + active_futures
+
+if __name__ == "__main__":
+
+    DIR = Path("io/2021-03-09/")
+    noise = "human"
+    n = 30
+    dfs = {
+        f.name.replace(".csv", ""): pd.read_csv(f)
+        for f in DIR.glob("responses_*.csv")
+        if "test" not in f.name
+    }
+    print([len(df) for df in dfs.values()])
+    assert len(dfs) == 2
+    assert set(dfs.keys()) == {"responses_RR", "responses_RandomSampling"}
+
+    #  offline._get_trained_model(
+    #  datasets["responses_RandomSampling"],
+    #  n_responses=10_000,
+    #  meta=_get_config("RandomSampling"),
+    #  noise_model="CKL",
+    #  module__mu=0.05,
+    #  **static,
+    #  )
+    #  sys.exit(0)
+    #  breakpoint()
+    #  r_dataset = datasets["responses_RandomSampling"]
+
+    client = Client("localhost:8786")
+    client.upload_file("offline.py")
+    d = client.run(_check_version)
+    _futures = [_get_futures(client, dfs, random_state=rs) for rs in range(10)]
+    futures = sum(_futures, [])
 
     for i, future in enumerate(as_completed(futures)):
         est, meta = future.result()

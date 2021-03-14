@@ -152,9 +152,9 @@ def _get_targets():
     Outputs: list of fnames: ['i0126.png', 'i0208.png', ...]
     """
     today = datetime.now().isoformat()[:10]
-    if today != "2021-03-10":
-        raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
     DIR = Path("io/2021-03-09/")
+    if today != "2021-03-12":
+        raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
     suffix = "RandomSampling"
     with open(DIR / f"config_{suffix}.yaml") as f:
         config = yaml.safe_load(f)
@@ -164,10 +164,12 @@ def _get_targets():
     return mrare
 
 
-def _X_test(targets: List[str] = None) -> np.ndarray:
+def _next_responses(alg: str, targets: List[str]) -> np.ndarray:
     df = _munge("io/next-fig3.json.static")
     cols = ["head", "winner", "loser"]
-    X_next_idx = df.loc[df.alg == "Test", cols].to_numpy()
+    alg = alg or "Test"
+    assert alg in df.alg.unique()
+    X_next_idx = df.loc[df.alg == alg, cols].to_numpy()
     # fmt: off
     idx_fname = {
         0:  "i0126.png", 1:  "i0208.png", 2:  "i0076.png", 3:  "i0326.png",
@@ -199,6 +201,9 @@ def _X_test(targets: List[str] = None) -> np.ndarray:
     assert set(spike_idx.keys()) == set(spikes.values())
     X_salmon = np.vectorize(spike_idx.get)(X_spikes)
     return X_salmon
+
+def _X_test(targets: List[str] = None) -> np.ndarray:
+    return _next_responses("Test", targets)
 
 
 class Stats:

@@ -99,5 +99,4 @@ def _get_nn_diffs(embedding, targets: List[int]) -> Tuple[float, np.ndarray]:
     neighbors = dists.argmin(axis=1)
     neighbor_dists = np.abs(neighbors - true_nns)
     nn_acc = (neighbor_dists == 0).mean()
-    print(nn_acc, np.median(neighbor_dists), neighbor_dists.mean())
     return nn_acc, neighbor_dists
