@@ -18,13 +18,16 @@ from numbers import Number as NumberType
 
 import numpy as np
 from scipy.spatial import procrustes
+from scipy.spatial.distance import pdist, squareform
 from sklearn.manifold import SpectralEmbedding
+import numpy.linalg as LA
 
 import salmon.triplets.algs.adaptive.search.gram_utils as gram_utils
 from salmon.triplets.offline import OfflineEmbedding
 from salmon.triplets.algs import TSTE
 
 ArrayLike = Union[list, np.ndarray]
+Number = Union[NumberType, int, float, np.integer, np.floating]
 
 
 def collect(
@@ -48,7 +51,12 @@ def collect(
         reduce = SpectralEmbedding(n_components=1, affinity="rbf")
         embedding = reduce.fit_transform(embedding)
     norm = np.linalg.norm
-    ground_truth = np.arange(n).reshape(-1, 1)
+    if targets:
+        ground_truth = np.array(targets)
+        assert (np.diff(ground_truth) > 0).all()
+        ground_truth = ground_truth.reshape(-1, 1)
+    else:
+        ground_truth = np.arange(n).reshape(-1, 1)
     Y1, Y2, disparity = procrustes(ground_truth, embedding)
     stats = {
         "embedding_error": norm(Y1 - Y2),
@@ -64,7 +72,16 @@ def collect(
         **diff_stats,
         **stats,
         **nn_dists,
+        **_dist_stats(ground_truth, embedding),
     }
+
+
+def _dist_stats(ground_truth: np.ndarray, em: np.ndarray) -> Dict[str, Number]:
+    D_star = pdist(ground_truth)
+    D_hat = pdist(em)
+    D_star /= D_star.max()
+    D_hat /= D_hat.max()
+    return {"dist_rel_error": LA.norm(D_hat - D_star) / LA.norm(D_star)}
 
 
 def _get_acc(embedding: np.ndarray, X: np.ndarray) -> float:

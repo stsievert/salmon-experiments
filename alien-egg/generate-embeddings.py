@@ -130,10 +130,10 @@ def _get_futures(client, dfs, random_state: Optional[int] = None):
     static = dict(
         X_test=X_test,
         d=2,
-        dwell=100,
-        verbose=200,
+        dwell=1000,
+        verbose=1000,
         random_state=random_state,
-        max_epochs=300_000,
+        max_epochs=400_000,
     )
 
     d = client.run(_prep)
@@ -153,8 +153,8 @@ def _get_futures(client, dfs, random_state: Optional[int] = None):
             n_responses=n_ans,
             meta=_get_config("RandomSampling"),
             noise_model=nm,
-            ident=f"random-next-{nm}",
-            alg="random-next",
+            ident=f"random_next-{nm}",
+            alg="random_next",
             **static,
             **_get_kwargs(nm),
         )

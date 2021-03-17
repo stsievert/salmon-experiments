@@ -153,7 +153,7 @@ def _get_targets():
     """
     today = datetime.now().isoformat()[:10]
     DIR = Path("io/2021-03-09/")
-    if today != "2021-03-12":
+    if today != "2021-03-16":
         raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
     suffix = "RandomSampling"
     with open(DIR / f"config_{suffix}.yaml") as f:
