@@ -101,16 +101,29 @@ def init(module, n=85, d=2, R=1, random_state=None, alg="RR", server=SALMON):
 
 
 def _find(q: Query, X: np.ndarray) -> List[int]:
+    global QUERIES
     idx = X[:, 0] == q["head"]
     idx &= (X[:, 1] == q["left"]) | (X[:, 1] == q["right"])
     idx &= (X[:, 2] == q["left"]) | (X[:, 2] == q["right"])
+
     full_idx = np.arange(len(X)).astype(int)
     return full_idx[idx]
 
 
 def _answer(query: Query, X: np.ndarray, rng: np.random.RandomState) -> Answer:
     idx = _find(query, X)
-    i = rng.choice(idx)
+    for _ in range(len(idx) * 3):
+        i = rng.choice(idx)
+        if i in QUERIES:
+            break
+    try:
+        QUERIES.remove(i)
+    except KeyError:
+        # Happens in two conditions:
+        # 1. race condition (`i` has already been removed)
+        # 2. This question must be repeated
+        pass
+
     q = X[i]
     ret = deepcopy(query)
     ret.update({"winner": int(q[1])})
@@ -209,18 +222,19 @@ async def main(config, X_train, X_test):
 if __name__ == "__main__":
     config = {
         "n": 85,
-        "d": 3,
+        "d": 5,
         "R": 1,
-        #  "sampler": "RR",
-        #  "max_responses": 40_000,
-        "sampler": "RandomSampling",
-        "max_responses": 60_000,
+        "sampler": "RR",
+        #  "sampler": "RandomSampling",
+        "max_responses": 10_000,
         "n_users": 5,
         "response_time": 2.0,
         "module": "CKL",
+        "random_state": 42,
     }
     config["ident"] = config["sampler"]
     X = np.load("io/X.npy")
+    QUERIES = set(range(len(X)))
     out = asyncio.run(main(config, X, X))
 
     # Eek! Testing on the train set. But it follows heim2015active.

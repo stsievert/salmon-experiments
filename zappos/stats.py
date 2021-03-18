@@ -7,10 +7,15 @@ import torch
 from salmon.triplets.algs import CKL as RunnerCKL
 from salmon.triplets.algs.adaptive import CKL
 from scipy.spatial import procrustes
+from functools import lru_cache
 
 Number = Union[int, float, NumberType]
 
 
+@lru_cache()
+def _read_low_dim():
+    return np.load("io/low-dim-features.npy")
+    
 def collect(
     embedding: List[List[float]], X: np.ndarray
 ) -> Dict[str, Union[Number, str]]:
@@ -20,7 +25,8 @@ def collect(
 
     acc = _get_acc(em, X)
     probs = _get_probs(em, X)
-    sim_stats = similarity(embedding, np.load("io/low-dim-features.npy"))
+    low_dim = _read_low_dim()
+    sim_stats = similarity(embedding, low_dim)
     return {"accuracy": acc, "prob_avg": probs, "prob_cls": "CKL", **sim_stats}
 
 
