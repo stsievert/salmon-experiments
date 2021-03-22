@@ -125,6 +125,7 @@ def _get_futures(client, dfs, random_state: int):
     assert len(datasets) == 3
 
     NUM_ANS = [n * i for i in range(10, 140, 10) if 0 < n * i <= 4000]
+    NUM_ANS += [n * i for i in range(1, 10)]
 
     static = dict(
         X_test=X_test,
@@ -179,6 +180,8 @@ def _get_futures(client, dfs, random_state: int):
         ]
     else:
         active_futures = []
+    futures = random_futures + active_futures
+    print(f"len(futures) = {len(futures)}")
     return random_futures + active_futures
 
 

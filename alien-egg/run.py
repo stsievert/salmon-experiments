@@ -153,7 +153,7 @@ def _get_targets():
     """
     today = datetime.now().isoformat()[:10]
     DIR = Path("io/2021-03-09/")
-    if today != "2021-03-21":
+    if today != "2021-03-22":
         raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
     suffix = "RandomSampling"
     with open(DIR / f"config_{suffix}.yaml") as f:
@@ -405,10 +405,10 @@ if __name__ == "__main__":
         "reaction_time": 0.25,
         "response_time": 2.00,
         "init": True,
-        "n_users": 2,
+        "n_users": 4,
         "alg": "RR",
         #  "alg": "RandomSampling",
-        "max_queries": 10_000 + 100,
+        "max_queries": 5_000 + 100,
     }
     ## Make sure no data has been uploaded
     r = httpx.get(SALMON + "/", timeout=20)
