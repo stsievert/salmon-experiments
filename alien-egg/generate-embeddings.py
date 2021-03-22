@@ -27,7 +27,7 @@ import offline
 def _check_version():
     import salmon
 
-    assert "v0.5.2+3" in salmon.__version__
+    assert "v0.5.2+8" in salmon.__version__
     return True
 
 
@@ -100,12 +100,11 @@ def _get_config(suffix: str, targets=False):
     return rare
 
 
-def _get_futures(client, dfs, random_state: Optional[int] = None):
-    if random_state is not None:
-        for k, df in dfs.items():
-            if "RR" in k:
-                continue
-            df = df.sample(frac=1, random_state=random_state)
+def _get_futures(client, dfs, random_state: int):
+    for k, df in dfs.items():
+        if "RR" in k:
+            continue
+        df = df.sample(frac=1, random_state=random_state)
 
     ## Set same initial questions
     limit = 1 * n
@@ -146,23 +145,6 @@ def _get_futures(client, dfs, random_state: Optional[int] = None):
     next_dataset = client.scatter(datasets["responses_next"])
     a_dataset = client.scatter(datasets["responses_RR"])
 
-    next_futures = [
-        client.submit(
-            offline._get_trained_model,
-            next_dataset,
-            n_responses=n_ans,
-            meta=_get_config("RandomSampling"),
-            noise_model=nm,
-            ident=f"random_next-{nm}",
-            alg="random_next",
-            **static,
-            **_get_kwargs(nm),
-        )
-        for n_ans in NUM_ANS
-        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
-        if n_ans <= len(datasets["responses_next"])
-    ]
-
     random_futures = [
         client.submit(
             offline._get_trained_model,
@@ -179,27 +161,30 @@ def _get_futures(client, dfs, random_state: Optional[int] = None):
         for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 
-    active_futures = [
-        client.submit(
-            offline._get_trained_model,
-            a_dataset,
-            n_responses=n_ans,
-            meta=_get_config("RR"),
-            noise_model=nm,
-            ident=f"active-{nm}",
-            alg="active",
-            **static,
-            **_get_kwargs(nm),
-        )
-        for n_ans in NUM_ANS
-        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
-    ]
-    return random_futures + active_futures + next_futures
+    if random_state == 1:
+        active_futures = [
+            client.submit(
+                offline._get_trained_model,
+                a_dataset,
+                n_responses=n_ans,
+                meta=_get_config("RR"),
+                noise_model=nm,
+                ident=f"active-{nm}",
+                alg="active",
+                **static,
+                **_get_kwargs(nm),
+            )
+            for n_ans in NUM_ANS
+            for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
+        ]
+    else:
+        active_futures = []
+    return random_futures + active_futures
 
 
 if __name__ == "__main__":
 
-    DIR = Path("io/2021-03-09/")
+    DIR = Path("io/2021-03-21/")
     noise = "human"
     n = 30
     dfs = {
@@ -226,7 +211,9 @@ if __name__ == "__main__":
     client = Client("localhost:8786")
     client.upload_file("offline.py")
     d = client.run(_check_version)
-    _futures = [_get_futures(client, dfs, random_state=rs) for rs in range(10)]
+    SEEDS = list(range(10))
+    assert 1 in SEEDS
+    _futures = [_get_futures(client, dfs, random_state=rs) for rs in SEEDS]
     futures = sum(_futures, [])
 
     for i, future in enumerate(as_completed(futures)):

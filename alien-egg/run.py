@@ -153,7 +153,7 @@ def _get_targets():
     """
     today = datetime.now().isoformat()[:10]
     DIR = Path("io/2021-03-09/")
-    if today != "2021-03-16":
+    if today != "2021-03-21":
         raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
     suffix = "RandomSampling"
     with open(DIR / f"config_{suffix}.yaml") as f:
@@ -403,11 +403,11 @@ if __name__ == "__main__":
         "dataset": "alien_eggs",
         "random_state": 42,
         "reaction_time": 0.25,
-        "response_time": 1.00,
+        "response_time": 2.00,
         "init": True,
-        "n_users": 3,
-        #  "alg": "RR",
-        "alg": "RandomSampling",
+        "n_users": 2,
+        "alg": "RR",
+        #  "alg": "RandomSampling",
         "max_queries": 10_000 + 100,
     }
     ## Make sure no data has been uploaded
