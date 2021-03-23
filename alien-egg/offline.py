@@ -50,7 +50,7 @@ def _get_unique(col: pd.Series):
 
 def _get_trained_model(
     X_train,
-    X_test,
+    X_test=None,
     n_responses=None,
     d=2,
     meta=None,
@@ -59,6 +59,7 @@ def _get_trained_model(
     ident=None,
     noise_model=None,
     alg=None,
+    fname=None,
     **kwargs,
 ):
     if meta is None:
@@ -84,6 +85,7 @@ def _get_trained_model(
         "ident": ident,
         "threads": threads,
         "alg": alg,
+        "fname": fname,
     }
     meta.update(_update)
 

@@ -2,6 +2,7 @@
 # coding: utf-8
 import sys
 from typing import List, Any, Dict, Union, Optional
+from copy import deepcopy
 from ast import literal_eval
 from pathlib import Path
 from typing import Tuple
@@ -106,18 +107,10 @@ def _get_futures(client, dfs, random_state: int):
             continue
         df = df.sample(frac=1, random_state=random_state)
 
-    ## Set same initial questions
-    limit = 1 * n
-    initial = dfs["responses_RR"].iloc[:limit]
-    for k, df in dfs.items():
-        df.iloc[:limit] = initial.copy()
-    assert all((df.iloc[:limit].score <= -1000).all() for df in dfs.values())
-
     cols = ["head", "winner", "loser"]
     datasets = {k: df[cols].to_numpy() for k, df in dfs.items()}
     html_targets = _get_config("RandomSampling", targets=True)
     targets = [t.split("/")[-2].strip("i.png '") for t in html_targets]
-    datasets["responses_next"] = run._next_responses("RandomSampling", targets)
     print([len(v) for v in datasets.values()])
     X_test = run._X_test()
 
@@ -142,10 +135,8 @@ def _get_futures(client, dfs, random_state: int):
     print(d)
     static["threads"] = d[0]
 
+    assert all("Random" in k or "RR" in k for k in dfs.keys())
     r_dataset = client.scatter(datasets["responses_RandomSampling"])
-    next_dataset = client.scatter(datasets["responses_next"])
-    a_dataset = client.scatter(datasets["responses_RR"])
-
     random_futures = [
         client.submit(
             offline._get_trained_model,
@@ -158,31 +149,36 @@ def _get_futures(client, dfs, random_state: int):
             **static,
             **_get_kwargs(nm),
         )
-        for n_ans in NUM_ANS
+        for n_ans in deepcopy(NUM_ANS)
         for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
     ]
 
     if random_state == 1:
+        keys = [k for k in datasets.keys() if "RR" in k]
+        a_datasets = {k: client.scatter(datasets[k]) for k in keys}
         active_futures = [
             client.submit(
                 offline._get_trained_model,
-                a_dataset,
+                a_datasets[k],
                 n_responses=n_ans,
                 meta=_get_config("RR"),
                 noise_model=nm,
                 ident=f"active-{nm}",
                 alg="active",
+                fname=k,
                 **static,
                 **_get_kwargs(nm),
             )
-            for n_ans in NUM_ANS
+            for n_ans in deepcopy(NUM_ANS)
             for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
+            for k in keys
         ]
+        print("len(af)", len(active_futures))
     else:
         active_futures = []
     futures = random_futures + active_futures
     print(f"len(futures) = {len(futures)}")
-    return random_futures + active_futures
+    return futures
 
 
 if __name__ == "__main__":
@@ -196,8 +192,12 @@ if __name__ == "__main__":
         if "test" not in f.name
     }
     print([len(df) for df in dfs.values()])
-    assert len(dfs) == 2
-    assert set(dfs.keys()) == {"responses_RR", "responses_RandomSampling"}
+    assert len(dfs) == 3
+    assert set(dfs.keys()) == {
+        "responses_RR1",
+        "responses_RR2",
+        "responses_RandomSampling",
+    }, dfs.keys()
 
     #  offline._get_trained_model(
     #  datasets["responses_RandomSampling"],
@@ -214,7 +214,7 @@ if __name__ == "__main__":
     client = Client("localhost:8786")
     client.upload_file("offline.py")
     d = client.run(_check_version)
-    SEEDS = list(range(10))
+    SEEDS = [s + 1 for s in range(10)]
     assert 1 in SEEDS
     _futures = [_get_futures(client, dfs, random_state=rs) for rs in SEEDS]
     futures = sum(_futures, [])
