@@ -9,7 +9,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from time import time
+from time import time, sleep
 from typing import Optional, Tuple, Union, Dict, List, Any
 from datetime import datetime
 from copy import deepcopy
@@ -50,6 +50,7 @@ class SalmonExperiment(BaseEstimator):
         R=1,
         init=True,
         alg="RR",
+        random_state=None,
     ):
         self.salmon = salmon
         self.dataset = dataset
@@ -58,6 +59,7 @@ class SalmonExperiment(BaseEstimator):
         self.R = R
         self.init = init
         self.alg = alg
+        self.random_state = random_state
 
     def initialize(self):
         if self.init:
@@ -66,12 +68,15 @@ class SalmonExperiment(BaseEstimator):
                 auth=("username", "password"),
                 timeout=20,
             )
-        if self.alg not in ["RR", "RandomSampling"]:
+            sleep(4)
+        if self.alg == "RR":
+            sampler = {"RR": {"R": self.R, "random_state": self.random_state}}
+        elif self.alg == "RandomSampling":
+            sampler = {"RandomSampling": {}}
+        else:
             raise ValueError(f"alg={self.alg} not in ['RR', 'RandomSampling']")
-        sampler = {"RR": {"R": self.R}}
-        if self.alg == "RandomSampling":
-            sampler["RR"]["sampling"] = "random"
 
+        assert self.random_state is not None, self.random_state
         init = {
             "d": self.d,
             "samplers": sampler,
@@ -153,7 +158,7 @@ def _get_targets():
     """
     today = datetime.now().isoformat()[:10]
     DIR = Path("io/2021-03-09/")
-    if today != "2021-03-22":
+    if today != "2021-03-24":
         raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
     suffix = "RandomSampling"
     with open(DIR / f"config_{suffix}.yaml") as f:
@@ -202,6 +207,7 @@ def _next_responses(alg: str, targets: List[str]) -> np.ndarray:
     X_salmon = np.vectorize(spike_idx.get)(X_spikes)
     return X_salmon
 
+
 def _X_test(targets: List[str] = None) -> np.ndarray:
     return _next_responses("Test", targets)
 
@@ -210,7 +216,7 @@ class Stats:
     async def run_until(self, n, event, *, config, targets):
         history = []
         X_test = _X_test()
-        ident = config["alg"]
+        fname = config["fname"].format(**config)
         while True:
             deadline = time() + 10
             responses = await self.collect()
@@ -220,7 +226,7 @@ class Stats:
                 d = r.json()
                 stat = stats.collect(d["embedding"], targets, X_test)
                 history.append({"n_responses": len(responses), **config, **stat})
-                pd.DataFrame(history).to_csv(f"history_{ident}.csv")
+                pd.DataFrame(history).to_csv(f"{fname}_history.csv")
             else:
                 print(r.text)
 
@@ -231,7 +237,7 @@ class Stats:
                 if k == "response_time":
                     k = "response_time_mean"
                 df[k] = v
-            df.to_csv(f"responses_{ident}.csv")
+            df.to_csv(f"{fname}_responses.csv")
 
             if event.is_set():
                 break
@@ -284,8 +290,14 @@ class User(BaseEstimator):
         if not hasattr(self, "initialized_") or not self.initialized_:
             self.init()
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(1)
 
+        sleep_time = self.random_state_.normal(loc=8, scale=2)
+        await asyncio.sleep(sleep_time)
+        sleep_time = self.random_state_.normal(
+            loc=self.reaction_time, scale=self.reaction_time / 4
+        )
+        await asyncio.sleep(sleep_time)
         for k in range(self.n_responses):
             try:
                 datum = {"num_responses": k, "puid": self.uid, "salmon": self.salmon}
@@ -345,12 +357,15 @@ def _fmt(x: str) -> int:
 
 
 async def main(**config):
-    kwargs = {k: config[k] for k in ["dataset", "n", "d", "init", "alg", "R"]}
+    r = httpx.get(SALMON + "/reset?force=1", timeout=20)
+    await asyncio.sleep(4)
+    kwargs = {k: config[k] for k in ["dataset", "n", "d", "init", "alg", "R", "random_state"]}
     exp = SalmonExperiment(**kwargs)
     exp.initialize()
 
     exp.config["targets"] = [_fmt(t) for t in exp.config["targets"]]
 
+    config["response_time"] = config["n_users"] / config["responses_per_sec"]
     n_responses = (config["max_queries"] // config["n_users"]) + 1
 
     kwargs = {k: config[k] for k in ["reaction_time", "response_time"]}
@@ -365,7 +380,7 @@ async def main(**config):
         users = [
             User(
                 http=client,
-                random_state=i,
+                random_state=i**2 + i**3 + i**4,
                 uid=str(i),
                 n_responses=n_responses,
                 targets=exp.config["targets"],
@@ -402,20 +417,24 @@ if __name__ == "__main__":
         "R": 1,
         "dataset": "alien_eggs",
         "random_state": 42,
-        "reaction_time": 0.25,
-        "response_time": 2.00,
+        "reaction_time": 0.0,
+        "n_users": 20,
         "init": True,
-        "n_users": 4,
-        "alg": "RR",
+        "max_queries": 8000,
+        "fname": "io/tmp/{alg}-{responses_per_sec}",
+        #  "responses_per_sec": 5,
         #  "alg": "RandomSampling",
-        "max_queries": 5_000 + 100,
     }
-    ## Make sure no data has been uploaded
-    r = httpx.get(SALMON + "/", timeout=20)
-    assert (
-        r.json()["detail"] == "No data has been uploaded"
-        or "Experiment keys are not correct" in r.json()["detail"]
-    )
 
+    config["alg"] = "RR"
+    #  for rate in [20, 10, 5, 2, 1]:
+    for rate in [1, 2, 5, 10, 20]:
+        config["responses_per_sec"] = rate
+        responses = asyncio.run(main(**config))
+        assert True
+        print(f"\n#### Done with rate={rate}\n")
+
+    config["alg"] = "RandomSampling"
+    config["responses_per_sec"] = 5
     responses = asyncio.run(main(**config))
     assert True
