@@ -28,7 +28,7 @@ import offline
 def _check_version():
     import salmon
 
-    assert "v0.5.2+8" in salmon.__version__
+    assert "v0.5.2+9" in salmon.__version__
     return True
 
 
@@ -92,7 +92,8 @@ def _get_kwargs(nm: str) -> Dict[str, Any]:
 
 
 def _get_config(suffix: str, targets=False):
-    with open(DIR / f"config_{suffix}.yaml") as f:
+    dir_ = Path("io/2021-03-21")
+    with open(dir_ / f"config_{suffix}.yaml") as f:
         raw = yaml.safe_load(f)
     if targets:
         return raw["targets"]
@@ -101,11 +102,14 @@ def _get_config(suffix: str, targets=False):
     return rare
 
 
-def _get_futures(client, dfs, random_state: int):
+def _get_futures(client, dfs, random_state: int, d=2, config=None):
     for k, df in dfs.items():
         if "RR" in k:
             continue
-        df = df.sample(frac=1, random_state=random_state)
+        elif "RandomSampling" in k:
+            df = df.sample(frac=1, random_state=random_state)
+        else:
+            raise ValueError(f"unrecognized algorithm in key {k}")
 
     cols = ["head", "winner", "loser"]
     datasets = {k: df[cols].to_numpy() for k, df in dfs.items()}
@@ -115,18 +119,19 @@ def _get_futures(client, dfs, random_state: int):
     X_test = run._X_test()
 
     print([len(v) for v in datasets.values()])
-    assert len(datasets) == 3
+    print(f"Total of {len(datasets)} items")
 
-    NUM_ANS = [n * i for i in range(10, 140, 10) if 0 < n * i <= 4000]
-    NUM_ANS += [n * i for i in range(1, 10)]
+    NUM_ANS = [n * i for i in range(1, 10)]
+    NUM_ANS += [n * i for i in range(10, 140, 10)]
+    NUM_ANS += [n * i for i in range(140, 240 + 20, 20) if i * n <= 7202]
 
     static = dict(
         X_test=X_test,
-        d=2,
         dwell=1000,
         verbose=1000,
         random_state=random_state,
         max_epochs=400_000,
+        d=d,
     )
 
     d = client.run(_prep)
@@ -134,24 +139,6 @@ def _get_futures(client, dfs, random_state: int):
     assert all(d), d
     print(d)
     static["threads"] = d[0]
-
-    assert all("Random" in k or "RR" in k for k in dfs.keys())
-    r_dataset = client.scatter(datasets["responses_RandomSampling"])
-    random_futures = [
-        client.submit(
-            offline._get_trained_model,
-            r_dataset,
-            n_responses=n_ans,
-            meta=_get_config("RandomSampling"),
-            noise_model=nm,
-            ident=f"random-{nm}",
-            alg="random",
-            **static,
-            **_get_kwargs(nm),
-        )
-        for n_ans in deepcopy(NUM_ANS)
-        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
-    ]
 
     if random_state == 1:
         keys = [k for k in datasets.keys() if "RR" in k]
@@ -161,11 +148,12 @@ def _get_futures(client, dfs, random_state: int):
                 offline._get_trained_model,
                 a_datasets[k],
                 n_responses=n_ans,
-                meta=_get_config("RR"),
+                meta=config or {},
                 noise_model=nm,
                 ident=f"active-{nm}",
                 alg="active",
                 fname=k,
+                priority=100,
                 **static,
                 **_get_kwargs(nm),
             )
@@ -176,6 +164,25 @@ def _get_futures(client, dfs, random_state: int):
         print("len(af)", len(active_futures))
     else:
         active_futures = []
+
+    assert all("Random" in k or "RR" in k for k in dfs.keys())
+    r_dataset = client.scatter(datasets["RandomSampling-5_responses"])
+    random_futures = [
+        client.submit(
+            offline._get_trained_model,
+            r_dataset,
+            n_responses=n_ans,
+            meta=config or {},
+            noise_model=nm,
+            ident=f"random-{nm}",
+            alg="random",
+            **static,
+            **_get_kwargs(nm),
+        )
+        for n_ans in deepcopy(NUM_ANS)
+        for nm in ["TSTE", "SOE", "CKL", "GNMDS"]
+    ]
+
     futures = random_futures + active_futures
     print(f"len(futures) = {len(futures)}")
     return futures
@@ -183,21 +190,25 @@ def _get_futures(client, dfs, random_state: int):
 
 if __name__ == "__main__":
 
-    DIR = Path("io/2021-03-21/")
+    DIR = Path("io/2021-03-24/")
+    # From run.py
+    config = {
+        "n": 30,
+        "d": 2,
+        "R": 1,
+        "dataset": "alien_eggs",
+        "random_state": 42,
+        "reaction_time": 0.0,
+        "n_users": 20,
+        "init": True,
+        "max_queries": 8000,
+    }
     noise = "human"
     n = 30
     dfs = {
-        f.name.replace(".csv", ""): pd.read_csv(f)
-        for f in DIR.glob("responses_*.csv")
-        if "test" not in f.name
+        f.name.replace(".csv", ""): pd.read_csv(f) for f in DIR.glob("*_responses.csv")
     }
     print([len(df) for df in dfs.values()])
-    assert len(dfs) == 3
-    assert set(dfs.keys()) == {
-        "responses_RR1",
-        "responses_RR2",
-        "responses_RandomSampling",
-    }, dfs.keys()
 
     #  offline._get_trained_model(
     #  datasets["responses_RandomSampling"],
@@ -215,8 +226,12 @@ if __name__ == "__main__":
     client.upload_file("offline.py")
     d = client.run(_check_version)
     SEEDS = [s + 1 for s in range(10)]
-    assert 1 in SEEDS
-    _futures = [_get_futures(client, dfs, random_state=rs) for rs in SEEDS]
+    assert 1 in SEEDS and SEEDS[0] == 1
+    _futures = [
+        _get_futures(client, dfs, random_state=rs, d=d, config=config)
+        for rs in SEEDS
+        for d in [1, 2]
+    ]
     futures = sum(_futures, [])
 
     for i, future in enumerate(as_completed(futures)):

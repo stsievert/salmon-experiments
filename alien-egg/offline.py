@@ -11,13 +11,14 @@ from pathlib import Path
 from dask.distributed import Client, as_completed
 import torch
 import numpy as np
+from sklearn.base import BaseEstimator
 
 import dask
 from sklearn.model_selection import train_test_split
 from salmon.triplets.offline import OfflineEmbedding
 
 
-class Embedding:
+class Embedding(BaseEstimator):
     def __init__(self, n, d, max_epochs=400, **kwargs):
         self.n = n
         self.d = d
@@ -68,7 +69,7 @@ def _get_trained_model(
         torch.set_num_threads(threads)
     meta = meta.copy()
     meta["ident"] = ident
-    meta.update({f"est__{k}": v for k, v in kwargs.items()})
+    meta.update({f"kwargs__{k}": v for k, v in kwargs.items()})
     n = X_train.max() + 1
 
     if n_responses:
@@ -88,7 +89,7 @@ def _get_trained_model(
         "fname": fname,
     }
     meta.update(_update)
-
     est = Embedding(n=n, d=d, ident=ident, **kwargs)
+    meta.update(est.get_params())
     est.fit(X_train, X_test)
     return est, meta

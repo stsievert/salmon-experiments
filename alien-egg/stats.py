@@ -41,14 +41,14 @@ def collect(
 
     diff_stats = {
         f"nn_diff_p{k}": np.percentile(nn_diffs, k)
-        for k in [99, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 1]
+        for k in [99, 98, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 2, 1]
     }
-    nn_dists = {f"nn_diff_{k}": (nn_diffs <= k).mean() for k in range(30)}
+    nn_dists = {f"nn_acc_radius_{k}": (nn_diffs <= k).mean() for k in range(30)}
 
     n, d = embedding.shape
     stats = {}
     if d > 1:
-        reduce = SpectralEmbedding(n_components=1, affinity="rbf")
+        reduce = SpectralEmbedding(n_components=1, affinity="nearest_neighbors")
         embedding = reduce.fit_transform(embedding)
     norm = np.linalg.norm
     if targets:
