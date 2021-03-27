@@ -205,6 +205,7 @@ if __name__ == "__main__":
     }
     noise = "human"
     n = 30
+    d = 2
     dfs = {
         f.name.replace(".csv", ""): pd.read_csv(f) for f in DIR.glob("*_responses.csv")
     }
@@ -230,7 +231,6 @@ if __name__ == "__main__":
     _futures = [
         _get_futures(client, dfs, random_state=rs, d=d, config=config)
         for rs in SEEDS
-        for d in [1, 2]
     ]
     futures = sum(_futures, [])
 

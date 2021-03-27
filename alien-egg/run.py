@@ -38,6 +38,7 @@ import datasets
 SALMON = "http://localhost:8421"
 SALMON_BACKEND = "http://localhost:8400"
 P_WRONG = 0.15  # p in [0, 1]
+DIR = Path("io/tmp")
 
 
 class SalmonExperiment(BaseEstimator):
@@ -51,6 +52,7 @@ class SalmonExperiment(BaseEstimator):
         init=True,
         alg="RR",
         random_state=None,
+        config_fname=None,
     ):
         self.salmon = salmon
         self.dataset = dataset
@@ -60,17 +62,18 @@ class SalmonExperiment(BaseEstimator):
         self.init = init
         self.alg = alg
         self.random_state = random_state
+        self.config_fname = config_fname
 
     def initialize(self):
         if self.init:
             httpx.get(
                 self.salmon + "/reset?force=1",
                 auth=("username", "password"),
-                timeout=20,
+                timeout=80,
             )
             sleep(4)
-        if self.alg == "RR":
-            sampler = {"RR": {"R": self.R, "random_state": self.random_state}}
+        if self.alg in {"RR"}:
+            sampler = {self.alg: {"R": self.R, "random_state": self.random_state}}
         elif self.alg == "RandomSampling":
             sampler = {"RandomSampling": {}}
         else:
@@ -88,7 +91,7 @@ class SalmonExperiment(BaseEstimator):
             data={"exp": yaml.dump(init)},
             files={"targets": eggs.read_bytes()},
             auth=("username", "password"),
-            timeout=10,
+            timeout=20,
         )
         assert r.status_code == 200, (r.status_code, r.text)
 
@@ -151,18 +154,27 @@ def _munge(fname: str) -> pd.DataFrame:
     return df[cols + ["loser"]]
 
 
-def _get_targets():
+def _get_targets(dir=DIR):
     """
-    Inputs: none
-    Outputs: list of fnames: ['i0126.png', 'i0208.png', ...]
+    Inputs
+    ------
+    dir : Path. (optional, ``default=Path("io/tmp")``)
+
+    Outputs
+    -------
+    targets, List[str]
+        List of image filenames: ``['i0126.png', 'i0208.png', ...]``
+
     """
     today = datetime.now().isoformat()[:10]
-    DIR = Path("io/2021-03-09/")
-    if today != "2021-03-25":
-        raise ValueError(f"Careful! Hard coded directory {DIR}. Fix me!")
     suffix = "RandomSampling"
-    with open(DIR / f"config_{suffix}.yaml") as f:
-        config = yaml.safe_load(f)
+
+    configs = []
+    for config_f in dir.glob("config_*.yaml"):
+        with open(config_f) as f:
+            configs.append(yaml.safe_load(f))
+    assert all(c["targets"] == configs[0]["targets"] for c in configs)
+    config = configs[0]
 
     rare = [t.split("/")[-2] for t in config["targets"]]
     mrare = [t.strip("'\" ") for t in rare]
@@ -217,16 +229,17 @@ class Stats:
         history = []
         X_test = _X_test()
         fname = config["fname"].format(**config)
+        dir = config["dir"]
         while True:
             deadline = time() + 10
             responses = await self.collect()
-            alg = "RR"  # config["alg"]
+            alg = config["alg"]
             r = await self._get_endpoint(f"/model/{alg}", base=SALMON_BACKEND)
             if r.status_code == 200:
                 d = r.json()
                 stat = stats.collect(d["embedding"], targets, X_test)
                 history.append({"n_responses": len(responses), **config, **stat})
-                pd.DataFrame(history).to_csv(f"{fname}_history.csv")
+                pd.DataFrame(history).to_csv(f"{dir / fname}_history.csv")
             else:
                 print(r.text)
 
@@ -237,7 +250,7 @@ class Stats:
                 if k == "response_time":
                     k = "response_time_mean"
                 df[k] = v
-            df.to_csv(f"{fname}_responses.csv")
+            df.to_csv(f"{dir / fname}_responses.csv")
 
             if event.is_set():
                 break
@@ -254,7 +267,7 @@ class Stats:
     @staticmethod
     async def _get_endpoint(endpoint, base=SALMON):
         async with httpx.AsyncClient() as http:
-            r = await http.get(base + endpoint, auth=("username", "password"))
+            r = await http.get(base + endpoint, auth=("username", "password"), timeout=10)
         return r
 
 
@@ -292,7 +305,7 @@ class User(BaseEstimator):
 
         await asyncio.sleep(1)
 
-        sleep_time = self.random_state_.normal(loc=8, scale=2)
+        sleep_time = self.random_state_.uniform(low=0, high=8)
         await asyncio.sleep(sleep_time)
         sleep_time = self.random_state_.normal(
             loc=self.reaction_time, scale=self.reaction_time / 4
@@ -329,7 +342,10 @@ class User(BaseEstimator):
                 w = answer["winner"]
                 if self.uid == "0":
                     msg = f"(h, l, r, w) = {(h, l, r, w)}"
-                    print(f"{msg}, score={answer['score']}")
+                    dl = abs(h - l)
+                    dr = abs(h - r)
+                    ratio = max(dr, dl) / (dl + dr)
+                    print(f"ratio={ratio:0.2f}, {msg}, score={answer['score']:0.2f}")
                 datum.update({"h": h, "l": l, "r": r, "w": w})
                 datum.update({"time": time()})
                 await asyncio.sleep(sleep_time)
@@ -357,11 +373,14 @@ def _fmt(x: str) -> int:
 
 
 async def main(**config):
-    r = httpx.get(SALMON + "/reset?force=1", timeout=20)
+    r = httpx.get(SALMON + "/reset?force=1", timeout=80)
     await asyncio.sleep(4)
     kwargs = {k: config[k] for k in ["dataset", "n", "d", "init", "alg", "R", "random_state"]}
     exp = SalmonExperiment(**kwargs)
     exp.initialize()
+    fname = config["fname"].format(**config)
+    with open(config["dir"] / f"config_{fname}.yaml", "w") as f:
+        yaml.dump(exp.config, f)
 
     exp.config["targets"] = [_fmt(t) for t in exp.config["targets"]]
 
@@ -400,7 +419,7 @@ async def main(**config):
 
 
 async def _get_responses(http, base=SALMON):
-    r = await http.get(base + f"/responses", auth=("username", "password"))
+    r = await http.get(base + f"/responses", auth=("username", "password"), timeout=20)
     return r.json()
 
 
@@ -418,23 +437,26 @@ if __name__ == "__main__":
         "dataset": "alien_eggs",
         "random_state": 42,
         "reaction_time": 0.0,
-        "n_users": 20,
         "init": True,
-        "max_queries": 8000,
-        "fname": "io/tmp/{alg}-{responses_per_sec}",
+        "max_queries": 7000,
+        "dir": DIR,
+        "fname": "{alg}-{responses_per_sec}",
         #  "responses_per_sec": 5,
         #  "alg": "RandomSampling",
     }
 
+    #  config["alg"] = "RandomSampling"
+    #  rate = 5
+    #  config["responses_per_sec"] = config["n_users"] = rate
+    #  responses = asyncio.run(main(**config))
+    #  assert True
+
     config["alg"] = "RR"
     #  for rate in [20, 10, 5, 2, 1]:
-    for rate in [1, 2, 5, 10, 20]:
-        config["responses_per_sec"] = rate
+    #  for rate in [5, 2, 1, 10, 20]:
+    for rate in [100]:
+        config["responses_per_sec"] = config["n_users"] = rate
         responses = asyncio.run(main(**config))
         assert True
         print(f"\n#### Done with rate={rate}\n")
 
-    config["alg"] = "RandomSampling"
-    config["responses_per_sec"] = 5
-    responses = asyncio.run(main(**config))
-    assert True
