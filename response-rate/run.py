@@ -13,6 +13,7 @@ from time import time, sleep
 from typing import Optional, Tuple, Union, Dict, List, Any
 from datetime import datetime
 from copy import deepcopy
+import zipfile
 
 import httpx
 import numpy as np
@@ -136,8 +137,14 @@ def _flatten_query(q: Dict[str, Any]) -> Optional[Dict[str, Union[int, datetime]
 
 
 def _munge(fname: str) -> pd.DataFrame:
-    with open(fname, "r") as f:
-        raw = json.load(f)
+    if "zip" in fname:
+        with zipfile.ZipFile(fname) as zf:
+            assert len(zf.filelist) == 1, "Only specify one file in zip file"
+            fname = zf.filelist[0]
+            raw = json.loads(zf.read(fname))
+    else:
+        with open(fname, "r") as f:
+            raw = json.load(f)
 
     assert raw.pop("meta") == {"status": "OK", "code": 200}
     assert len(raw) == 1
@@ -181,7 +188,7 @@ def _get_targets(dir=DIR):
 
 
 def _next_responses(alg: str, targets: List[str]) -> np.ndarray:
-    df = _munge("io/next-fig3.json.static")
+    df = _munge("io/next-fig3.json.zip")
     cols = ["head", "winner", "loser"]
     alg = alg or "Test"
     assert alg in df.alg.unique()
