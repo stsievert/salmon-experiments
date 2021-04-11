@@ -74,23 +74,33 @@ def _munge(fname: str) -> pd.DataFrame:
     return df[cols + ["loser"]]
 
 
-def launch_experiment(hostname: str, *, n: int = 30, d: int = 2, seed: int = 42):
+def launch_experiment(
+    hostname: str, *, n: int = 30, d: int = 2, seed: int = 42, sampler="ARR", reset=True,
+):
     username, password = "fu", "bar"
     r = httpx.post(hostname + f"/create_user/{username}/{password}")
     assert r.status_code in [200, 403]
     init = {
         "targets": targets.get(n),
         "d": d,
-        "samplers": {"ARR": {"random_state": seed}},
     }
-    r = httpx.get(hostname + "/reset?force=1", auth=(username, password), timeout=30)
-    r = httpx.post(
-        hostname + "/init_exp",
-        auth=(username, password),
-        data={"exp": json.dumps(init)},
-        timeout=30,
-    )
-    assert r.status_code == 200
+    if sampler == "ARR":
+        samplers = {"ARR": {"random_state": seed}}
+    elif sampler == "RandomSampling":
+        samplers = {"RandomSampling": {}}
+    else:
+        raise ValueError(f"sampler={sampler} not in ['ARR', 'RandomSampling']")
+    init["samplers"] = samplers
+
+    if reset:
+        r = httpx.get(hostname + "/reset?force=1", auth=(username, password), timeout=30)
+        r = httpx.post(
+            hostname + "/init_exp",
+            auth=(username, password),
+            data={"exp": json.dumps(init)},
+            timeout=30,
+        )
+        assert r.status_code == 200
     return init
 
 
@@ -188,10 +198,12 @@ async def run(n=30, hostname="http://127.0.0.1:8421"):
     print(f"#### Total of {sum(num_responses)} responses gathered")
     return sum(num_responses)
 
+
 async def main(hostnames: Dict[int, str]) -> int:
     tasks = [run(n=n, hostname=hostname) for n, hostname in hostnames.items()]
     num_responses = await asyncio.gather(*tasks)
     return sum(num_responses)
+
 
 if __name__ == "__main__":
     # Saves alg state to database
