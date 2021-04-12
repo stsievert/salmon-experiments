@@ -35,8 +35,8 @@ async def main(
 
 
 if __name__ == "__main__":
-    n = 180
+    n = 90
     d = 2
     hostname = "http://localhost:8421"
     config = launch_experiment(hostname, n=n, d=d, seed=42, sampler="RandomSampling", reset=True)
-    asyncio.run(main(config=config, hostname=hostname, n_responses=70_000))
+    asyncio.run(main(config=config, hostname=hostname, n_responses=50_000))
