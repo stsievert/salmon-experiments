@@ -81,27 +81,32 @@ def _get_estimator(
     d: int = 2,
     num_ans: int,
     seed=None,
+    sampling=None,
+    max_epochs=2_000_000,
     **kwargs,
 ) -> Tuple[OfflineEmbedding, Dict[str, Any]]:
+    assert sampling is not None
     if seed:
         rng = np.random.RandomState(seed)
         rng.shuffle(X_train)
     X_train = X_train[:num_ans]
     assert X_train.shape == (num_ans, 3)
 
-    est = OfflineEmbedding(n=n, d=d, random_state=10, **kwargs)
+    est = OfflineEmbedding(n=n, d=d, random_state=42, max_epochs=max_epochs, **kwargs)
     est.fit(X_train, X_test)
-    return (
-        est,
-        {
-            "n": n,
-            "d": d,
-            "n_train": len(X_train),
-            "n_test": len(X_test),
-            "seed": seed,
-            "num_ans": num_ans,
-        },
-    )
+    est_kwargs = {f"est__{k}": v for k, v in kwargs.items()}
+    ret_dict = {
+        "n": n,
+        "d": d,
+        "n_train": len(X_train),
+        "n_test": len(X_test),
+        "seed": seed,
+        "num_ans": num_ans,
+        "sampling": sampling,
+        "est__random_state": est.random_state,
+        **est_kwargs,
+    }
+    return est, ret_dict
 
 
 def _launch_jobs(
@@ -120,18 +125,31 @@ def _launch_jobs(
     difficulty = np.round(10 * d * n * np.log(n)).astype(int)
     print("Active ratio:", max(active_num_ans) / difficulty, len(X_active))
 
-    rand_num_ans = _get_num_response(n, limit=limits.get(n, len(X_active)))
+    rand_num_ans = _get_num_response(n, limit=limits.get(n, len(X_random)))
     print("Random ratio:", max(rand_num_ans) / difficulty, len(X_random))
 
     kwargs = dict(n=n, d=d, X_test=X_test)
+    X_active_f = client.scatter(X_active)
     active_kwargs = [
-        {"X_train": X_active, "seed": None, "num_ans": num_ans, **kwargs}
+        {
+            "X_train": X_active_f,
+            "seed": None,
+            "sampling": "active",
+            "num_ans": num_ans,
+            **kwargs,
+        }
         for num_ans in active_num_ans
     ]
 
     X_random_f = client.scatter(X_random)
     random_kwargs = [
-        {"X_train": X_random_f, "seed": i + 1, "num_ans": num_ans, **kwargs}
+        {
+            "X_train": X_random_f,
+            "seed": i + 1,
+            "num_ans": num_ans,
+            "sampling": "random",
+            **kwargs,
+        }
         for i in range(n_random)
         for num_ans in rand_num_ans
     ]
