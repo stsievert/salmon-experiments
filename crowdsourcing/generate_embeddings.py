@@ -7,6 +7,7 @@ import msgpack
 from zipfile import ZipFile, ZIP_LZMA
 from io import BytesIO
 from typing import Tuple, Dict, Any
+import random as random_mod
 
 from salmon.triplets.offline import OfflineEmbedding
 
@@ -14,7 +15,7 @@ from salmon.triplets.offline import OfflineEmbedding
 def _check_version():
     import salmon
 
-    assert "v0.6.0+25" in salmon.__version__
+    assert "v0.6.0+26" in salmon.__version__
     return salmon.__version__
 
 
@@ -82,7 +83,7 @@ def _get_estimator(
     num_ans: int,
     seed=None,
     sampling=None,
-    max_epochs=2_000_000,
+    max_epochs=600_000,
     **kwargs,
 ) -> Tuple[OfflineEmbedding, Dict[str, Any]]:
     assert sampling is not None
@@ -136,9 +137,12 @@ def _launch_jobs(
             "seed": None,
             "sampling": "active",
             "num_ans": num_ans,
+            "noise_model": nm,
+            "ident": f"{nm}-active",
             **kwargs,
         }
         for num_ans in active_num_ans
+        for nm in ["TSTE", "SOE", "CKL"]
     ]
 
     X_random_f = client.scatter(X_random)
@@ -148,13 +152,18 @@ def _launch_jobs(
             "seed": i + 1,
             "num_ans": num_ans,
             "sampling": "random",
+            "ident": f"{nm}-random",
             **kwargs,
         }
         for i in range(n_random)
         for num_ans in rand_num_ans
+        for nm in ["TSTE", "SOE", "CKL"]
     ]
 
-    futures = client.map(lambda d: _get_estimator(**d), active_kwargs + random_kwargs)
+    all_kwargs = active_kwargs + random_kwargs
+    random_mod.shuffle(all_kwargs)
+    futures = client.map(lambda d: _get_estimator(**d), all_kwargs)
+
     return futures
 
 
