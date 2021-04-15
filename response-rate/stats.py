@@ -22,9 +22,9 @@ from scipy.spatial.distance import pdist, squareform
 from sklearn.manifold import SpectralEmbedding
 import numpy.linalg as LA
 
-import salmon.triplets.algs.adaptive.search.gram_utils as gram_utils
+import salmon.triplets.samplers.adaptive.search.gram_utils as gram_utils
 from salmon.triplets.offline import OfflineEmbedding
-from salmon.triplets.algs import TSTE
+from salmon.triplets.samplers import TSTE
 
 ArrayLike = Union[list, np.ndarray]
 Number = Union[NumberType, int, float, np.integer, np.floating]
