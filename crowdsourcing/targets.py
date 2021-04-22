@@ -77,6 +77,21 @@ def get(num: int) -> List[int]:
     assert {len(v) for v in out.values()} == set(valid_nums)
     return out[num]
 
+
+def ground_truth_responses(n: int, length=10_000) -> np.ndarray:
+    T = get(n)
+    responses = []
+    rng = np.random.RandomState(42)
+    while True:
+        h, a, b = rng.choice(len(T), size=3, replace=False)
+        a_wins = abs(T[h] - T[a]) < abs(T[h] - T[b])
+        w, l = (a, b) if a_wins else (b, a)
+        responses.append([int(h), int(w), int(l)])
+        if len(responses) >= length:
+            return np.array(responses)
+    raise ValueError()
+
+
 if __name__ == "__main__":
     n = 30
     for mul in [1, 3, 6, 10]:

@@ -10,12 +10,13 @@ from typing import Tuple, Dict, Any
 import random as random_mod
 
 from salmon.triplets.offline import OfflineEmbedding
+import targets
 
 
 def _check_version():
     import salmon
 
-    assert "v0.6.0+26" in salmon.__version__
+    assert "v0.6.0+32" in salmon.__version__
     return salmon.__version__
 
 
@@ -60,9 +61,7 @@ def _generate_embedding(
 
 
 def _get_num_response(n, limit=None):
-    # 10 * n up to 130 * n (starting at 10 * n)
-    num_ans = [i * n for i in range(1, 10, 1)]
-    num_ans += [i * n for i in range(10, 20, 2)]
+    num_ans = [i * n for i in range(1, 20, 2)]
     num_ans += [i * n for i in range(20, 50, 5)]
     num_ans += [i * n for i in range(50, 100, 10)]
     num_ans += [i * n for i in range(100, 200, 20)]
@@ -83,7 +82,7 @@ def _get_estimator(
     num_ans: int,
     seed=None,
     sampling=None,
-    max_epochs=600_000,
+    max_epochs=1_000_000,
     **kwargs,
 ) -> Tuple[OfflineEmbedding, Dict[str, Any]]:
     assert sampling is not None
@@ -110,6 +109,13 @@ def _get_estimator(
     return est, ret_dict
 
 
+def _get_kwargs(nm):
+    if nm in ["SOE", "TSTE"]:
+        return {}
+    elif nm == "CKL":
+        return {"module__mu": 0.05}
+    raise ValueError(f"nm={nm} not recognized")
+
 def _launch_jobs(
     n: int,
     X_active: np.ndarray,
@@ -120,7 +126,10 @@ def _launch_jobs(
 ) -> List[Future]:
     client = get_client()
 
-    limits = {30: 10_000}
+    limits = {30: 12_000}
+    assert X_active.max() == n - 1, X_active.max()
+    assert X_random.max() == n - 1, X_random.max()
+    assert X_test.max() == n - 1, X_test.max()
 
     active_num_ans = _get_num_response(n, limit=limits.get(n, len(X_active)))
     difficulty = np.round(10 * d * n * np.log(n)).astype(int)
@@ -130,6 +139,7 @@ def _launch_jobs(
     print("Random ratio:", max(rand_num_ans) / difficulty, len(X_random))
 
     kwargs = dict(n=n, d=d, X_test=X_test)
+    #  kwargs["max_epochs"] = 100_000  # TODO DEBUG: delete
     X_active_f = client.scatter(X_active)
     active_kwargs = [
         {
@@ -140,6 +150,7 @@ def _launch_jobs(
             "noise_model": nm,
             "ident": f"{nm}-active",
             **kwargs,
+            **_get_kwargs(nm),
         }
         for num_ans in active_num_ans
         for nm in ["TSTE", "SOE", "CKL"]
@@ -152,8 +163,10 @@ def _launch_jobs(
             "seed": i + 1,
             "num_ans": num_ans,
             "sampling": "random",
+            "noise_model": nm,
             "ident": f"{nm}-random",
             **kwargs,
+            **_get_kwargs(nm),
         }
         for i in range(n_random)
         for num_ans in rand_num_ans
@@ -168,7 +181,7 @@ def _launch_jobs(
 
 
 if __name__ == "__main__":
-    TODAY = "2021-04-09"
+    TODAY = "2021-04-16"
     DIR = Path(f"io/{TODAY}/")
     N = [30, 90, 180, 300]
     DIRS = [DIR / f"n={n}" for n in N]
@@ -176,11 +189,13 @@ if __name__ == "__main__":
     RANDOM_DIR = Path("io/random/train")
     TEST_DIR = Path("io/random/test")
     RANDOM = {n: RANDOM_DIR / f"n={n}-responses.parquet" for n in N}
-    TEST = {n: TEST_DIR / f"n={n}-responses.parquet" for n in N}
 
     active = {n: _get_responses(p, n) for n, p in zip(N, DIRS)}
     random = {n: _get_responses(p, n) for n, p in RANDOM.items()}
-    test = {n: _get_responses(p, n) for n, p in TEST.items()}
+
+    #  TEST = {n: TEST_DIR / f"n={n}-responses.parquet" for n in N}
+    #  test = {n: _get_responses(p, n) for n, p in TEST.items()}
+    test = {n: targets.ground_truth_responses(n, length=10_000) for n in N}
 
     client = Client("localhost:8786")
     _d = client.run(_check_version)
@@ -192,6 +207,7 @@ if __name__ == "__main__":
         print(f"### n = {n}")
         _futures = _launch_jobs(n, active[n], random[n], test[n])
         futures.extend(_futures)
+        #  break  # TODO DEBUG: delete
     print(len(futures), {type(f) for f in futures})
 
     zf_kwargs = dict(compression=ZIP_LZMA, compresslevel=9)

@@ -85,7 +85,7 @@ def launch_experiment(
         "d": d,
     }
     if sampler == "ARR":
-        samplers = {"ARR": {"random_state": seed}}
+        samplers = {"ARR": {"random_state": seed, "R": 1}}
     elif sampler == "RandomSampling":
         samplers = {"RandomSampling": {}}
     else:
@@ -118,6 +118,7 @@ async def simulate_user(
     await asyncio.sleep(responses["secs_till_start"])
     start = time()
     targets = config["targets"]
+    await asyncio.sleep(np.random.uniform(low=0, high=5))
     assert set(np.diff(np.argsort(targets)).tolist()) == {1}
     for k, rt in enumerate(responses["response_times"]):
         __start = time()
@@ -162,7 +163,7 @@ async def run(n=30, hostname="http://127.0.0.1:8421"):
     eps = n / 30
     await asyncio.sleep(eps + np.random.uniform(low=0, high=eps))
     config = launch_experiment(hostname, n=n)
-    responses = _munge("next-fig3.json.zip")
+    responses = _munge("io/next-fig3.json.zip")
     responses = responses.sort_values(by="timestamp")
     responses["secs_from_start"] = (
         responses["timestamp"] - responses["timestamp"].min()
@@ -210,9 +211,12 @@ if __name__ == "__main__":
     # Relaunches algs on /init_exp
     # Restart: database restored, /init_exp never run.
     hostnames = {
-        30: "http://44.234.8.206:8421",
-        90: "http://44.234.44.237:8421",
-        180: "http://44.242.162.22:8421",
-        300: "http://44.228.130.57:8421",
+        30:  "35.81.82.247",
+        90:  "35.80.16.47",
+        180: "44.234.20.96",
+        300: "34.222.200.22",
     }
+    hostnames = {k: f"http://{v}:8421" for k, v in hostnames.items()}
+    print(hostnames)
     asyncio.run(main(hostnames))
+    #  asyncio.run(run())
