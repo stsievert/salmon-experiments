@@ -16,7 +16,7 @@ import targets
 def _check_version():
     import salmon
 
-    assert "v0.6.0+32" in salmon.__version__
+    assert "v0.6.0+34" in salmon.__version__
     return salmon.__version__
 
 
@@ -61,8 +61,7 @@ def _generate_embedding(
 
 
 def _get_num_response(n, limit=None):
-    num_ans = [i * n for i in range(1, 20, 2)]
-    num_ans += [i * n for i in range(20, 50, 5)]
+    num_ans = [i * n for i in range(1, 50, 5)]
     num_ans += [i * n for i in range(50, 100, 10)]
     num_ans += [i * n for i in range(100, 200, 20)]
     num_ans += [i * n for i in range(200, 500, 50)]
@@ -82,7 +81,7 @@ def _get_estimator(
     num_ans: int,
     seed=None,
     sampling=None,
-    max_epochs=1_000_000,
+    max_epochs=4_000_000,
     **kwargs,
 ) -> Tuple[OfflineEmbedding, Dict[str, Any]]:
     assert sampling is not None
