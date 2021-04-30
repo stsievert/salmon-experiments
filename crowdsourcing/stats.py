@@ -1,7 +1,7 @@
 from datetime import datetime
 from functools import lru_cache
 from numbers import Number as NumberType
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, Union, List, Tuple
 from zipfile import ZipFile
 import numpy.linalg as LA
 
@@ -10,10 +10,13 @@ import pandas as pd
 import numpy as np
 
 import targets as targets_module
+import torch
 
 datetime_parser = lambda t: datetime.strptime(t, "%Y-%m-%d %H:%M:%S.%f")
 ArrayLike = Union[list, np.ndarray]
 Number = Union[NumberType, int, float, np.integer, np.floating]
+Array = Union[np.ndarray, torch.Tensor]
+
 
 
 def accuracy(
@@ -155,3 +158,53 @@ def test_responses(n: int) -> Dict[str, np.ndarray]:
         human = _X_test(targets)
         return {"ground_truth": gt_responses, "simulation": sim, "human": human}
     return {"ground_truth": gt_responses, "simulation": sim}
+
+def nn_accs(embedding: np.ndarray, targets: List[int]):
+    nn_acc, nn_diffs = _get_nn_diffs(embedding, targets)
+
+    diff_stats = {
+        f"nn_diff_p{k}": np.percentile(nn_diffs, k)
+        for k in [99, 98, 95, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5, 2, 1]
+    }
+    nn_dists = {f"nn_acc_radius_{k}": (nn_diffs <= k).mean() for k in range(30)}
+    return nn_dists
+def gram_matrix(X: Array) -> Array:
+    """
+    from salmon.triplets.samplers.adaptive.search.gram_utils import gram_matrix
+    """
+    if isinstance(X, torch.Tensor):
+        return X @ X.transpose(0, 1)
+    return X @ X.T
+
+
+def distances(G: Array) -> Array:
+    """
+    from salmon.triplets.samplers.adaptive.search.gam_utils import distances
+    """
+#     assert_gram(G)
+    G1 = np.diag(G).reshape(1, -1)
+    G2 = np.diag(G).reshape(-1, 1)
+
+    D = -2 * G + G1 + G2
+    return D
+
+def _get_nn_diffs(embedding, targets: List[int]) -> Tuple[float, np.ndarray]:
+    """
+    Get the NN accuracy and the number of objects that are closer than the
+    true NN.
+    """
+    true_nns = []
+    t = np.array(targets)
+    for ti in targets:
+        true_dist = np.abs(t - ti).astype("float32")
+        true_dist[true_dist <= 0] = np.inf
+        true_nns.append(true_dist.argmin())
+    true_nns = np.array(true_nns).astype("int")
+
+    dists = distances(gram_matrix(embedding))
+    dists[dists <= 0] = np.inf
+
+    neighbors = dists.argmin(axis=1)
+    neighbor_dists = np.abs(neighbors - true_nns)
+    nn_acc = (neighbor_dists == 0).mean()
+    return nn_acc, neighbor_dists

@@ -16,7 +16,7 @@ import targets
 def _check_version():
     import salmon
 
-    assert "v0.6.0+34" in salmon.__version__
+    assert "v0.6.0+35" in salmon.__version__
     return salmon.__version__
 
 
@@ -42,24 +42,6 @@ def _get_responses(
     return responses
 
 
-def _generate_embedding(
-    X_train: np.ndarray,
-    X_test: np.ndarray,
-    *,
-    num_ans: int,
-    d: int = 2,
-    seed: int = 42,
-    shuffle: bool = False,
-) -> Dict[str, Any]:
-    return {
-        "d": d,
-        "shuffle": shuffle,
-        "n_train": len(X_train),
-        "n_test": len(X_test),
-        "seed": seed,
-    }
-
-
 def _get_num_response(n, limit=None):
     num_ans = [i * n for i in range(1, 50, 5)]
     num_ans += [i * n for i in range(50, 100, 10)]
@@ -81,7 +63,7 @@ def _get_estimator(
     num_ans: int,
     seed=None,
     sampling=None,
-    max_epochs=4_000_000,
+    max_epochs=1_000_000,
     **kwargs,
 ) -> Tuple[OfflineEmbedding, Dict[str, Any]]:
     assert sampling is not None
@@ -114,6 +96,7 @@ def _get_kwargs(nm):
     elif nm == "CKL":
         return {"module__mu": 0.05}
     raise ValueError(f"nm={nm} not recognized")
+
 
 def _launch_jobs(
     n: int,
@@ -152,7 +135,7 @@ def _launch_jobs(
             **_get_kwargs(nm),
         }
         for num_ans in active_num_ans
-        for nm in ["TSTE", "SOE", "CKL"]
+        for nm in ["CKL"]
     ]
 
     X_random_f = client.scatter(X_random)
@@ -169,7 +152,7 @@ def _launch_jobs(
         }
         for i in range(n_random)
         for num_ans in rand_num_ans
-        for nm in ["TSTE", "SOE", "CKL"]
+        for nm in ["CKL"]
     ]
 
     all_kwargs = active_kwargs + random_kwargs
@@ -182,7 +165,8 @@ def _launch_jobs(
 if __name__ == "__main__":
     TODAY = "2021-04-16"
     DIR = Path(f"io/{TODAY}/")
-    N = [30, 90, 180, 300]
+    #  N = [30]#, 90, 180, 300]
+    N = [90, 180, 300]
     DIRS = [DIR / f"n={n}" for n in N]
     assert all(d.exists() for d in DIRS)
     RANDOM_DIR = Path("io/random/train")
@@ -194,7 +178,7 @@ if __name__ == "__main__":
 
     #  TEST = {n: TEST_DIR / f"n={n}-responses.parquet" for n in N}
     #  test = {n: _get_responses(p, n) for n, p in TEST.items()}
-    test = {n: targets.ground_truth_responses(n, length=10_000) for n in N}
+    test = {n: targets.ground_truth_responses(n, length=20_000) for n in N}
 
     client = Client("localhost:8786")
     _d = client.run(_check_version)
@@ -215,7 +199,11 @@ if __name__ == "__main__":
     with ZipFile(out_file, mode="w", **zf_kwargs) as zf:
         pass
     for k, future in enumerate(as_completed(futures)):
-        est, meta = future.result()
+        try:
+            est, meta = future.result()
+        except Exception as e:
+            print(f"Exception on future {k}! {e}")
+            continue
         history = {k: [h.get(k, None) for h in est.history_] for k in est.history_[0]}
         to_save = {
             "embedding": est.embedding_.tolist(),
