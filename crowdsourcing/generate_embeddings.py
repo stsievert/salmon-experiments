@@ -16,7 +16,7 @@ import targets
 def _check_version():
     import salmon
 
-    assert "v0.6.0+35" in salmon.__version__
+    assert "v0.6.0+43" in salmon.__version__
     return salmon.__version__
 
 

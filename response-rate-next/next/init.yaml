@@ -1,0 +1,46 @@
+app_id: PoolBasedTripletMDS
+args:
+  alg_list:
+    - {alg_id: STE, alg_label: STE, test_alg_label: Test}
+  algorithm_management_settings:
+    mode: fixed_proportions
+    params:
+    - {alg_label: STE, proportion: 1}
+  d: 2
+  debrief: Test debrief
+  failure_probability: 0.01
+  instructions: Test instructions
+  participant_to_algorithm_management: one_to_many
+
+  targets:
+    targetset:
+        - {"primary_description": "i0022.png"}
+        - {"primary_description": "i0036.png"}
+        - {"primary_description": "i0050.png"}
+        - {"primary_description": "i0074.png"}
+        - {"primary_description": "i0076.png"}
+        - {"primary_description": "i0112.png"}
+        - {"primary_description": "i0114.png"}
+        - {"primary_description": "i0126.png"}
+        - {"primary_description": "i0142.png"}
+        - {"primary_description": "i0152.png"}
+        - {"primary_description": "i0184.png"}
+        - {"primary_description": "i0194.png"}
+        - {"primary_description": "i0200.png"}
+        - {"primary_description": "i0208.png"}
+        - {"primary_description": "i0220.png"}
+        - {"primary_description": "i0254.png"}
+        - {"primary_description": "i0256.png"}
+        - {"primary_description": "i0312.png"}
+        - {"primary_description": "i0322.png"}
+        - {"primary_description": "i0326.png"}
+        - {"primary_description": "i0414.png"}
+        - {"primary_description": "i0420.png"}
+        - {"primary_description": "i0430.png"}
+        - {"primary_description": "i0438.png"}
+        - {"primary_description": "i0454.png"}
+        - {"primary_description": "i0470.png"}
+        - {"primary_description": "i0494.png"}
+        - {"primary_description": "i0524.png"}
+        - {"primary_description": "i0526.png"}
+        - {"primary_description": "i0572.png"}
