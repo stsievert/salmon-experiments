@@ -59,7 +59,7 @@ import targets
 #  SALMON = "http://localhost:8421"
 #  SALMON_BACKEND = "http://localhost:8400"
 today = datetime.now().isoformat()[:10]
-DIR = Path(f"io/{today}-search")
+DIR = Path(f"io/{today}")
 if not DIR.exists():
     DIR.mkdir()
 
@@ -77,6 +77,7 @@ class SalmonExperiment(BaseEstimator):
         random_state=None,
         config_fname=None,
         n_search=0,
+        n_top=0,
     ):
         self.url = url
         self.dataset = dataset
@@ -88,6 +89,7 @@ class SalmonExperiment(BaseEstimator):
         self.random_state = random_state
         self.config_fname = config_fname
         self.n_search = n_search
+        self.n_top = n_top
 
     def initialize(self):
         if self.init:
@@ -100,7 +102,16 @@ class SalmonExperiment(BaseEstimator):
             sleep(4)
 
         if self.alg in {"ARR"}:
-            sampler = {self.alg: {"R": self.R, "random_state": self.random_state}}
+            sampler = {
+                self.alg: {
+                    "R": self.R,
+                    "random_state": self.random_state,
+                }
+            }
+            if self.n_search != 0:
+                sampler[self.alg]["n_search"] = self.n_search
+            if self.n_top != 0:
+                sampler[self.alg]["n_top"] = self.n_top
         elif self.alg == "TSTE":
             sampler = {
                 self.alg: {"random_state": self.random_state, "n_search": self.n_search}
@@ -300,12 +311,12 @@ class User(BaseEstimator):
                 _s = time()
                 try:
                     _r = await self.http.post(
-                        self.url + ":8421/answer", data=json.dumps(answer), timeout=20
+                        self.url + ":8421/answer", json=answer, timeout=20
                     )
                 except:
                     pass
                 else:
-                    assert _r.status_code == 200, _r.text
+                    assert _r.status_code == 200, (_r.status_code, _r.text)
                 datum.update({"time_post_answer": time() - _s})
                 self.data_.append(datum)
             except Exception as e:
@@ -333,6 +344,9 @@ async def main(**config):
     }
     if "n_search" in config:
         kwargs["n_search"] = config["n_search"]
+    if "n_top" in config:
+        kwargs["n_top"] = config["n_top"]
+
     exp = SalmonExperiment(config["url"], **kwargs)
     exp.initialize()
     fname = config["fname"].format(**config)
@@ -439,15 +453,15 @@ async def run_searches():
 
     # All t3.xlarge instances; $0.16/hr
     URLS = {
-              30: "34.222.182.148",
-             100: "35.81.168.120",
-             300: "35.80.5.220",
-           1_000: "100.20.65.157",
-           3_000: "44.229.42.169",
-          10_000: "44.234.34.244",
-          30_000: "44.228.131.111",
-         100_000: "35.80.29.91",
-         300_000: "35.82.32.178",
+        30: "34.222.182.148",
+        100: "35.81.168.120",
+        300: "35.80.5.220",
+        1_000: "100.20.65.157",
+        3_000: "44.229.42.169",
+        10_000: "44.234.34.244",
+        30_000: "44.228.131.111",
+        100_000: "35.80.29.91",
+        300_000: "35.82.32.178",
     }
     # fmt: on
     jobs = []
@@ -464,6 +478,88 @@ async def run_searches():
     return True
 
 
+async def run_salmon_searches():
+    config = {
+        "n": 90,
+        "d": 2,
+        "R": 1,
+        "dataset": "alien_eggs",
+        "random_state": 400,
+        "init": True,
+        "max_queries": 30_000,
+        #  "max_queries": 200,
+        "dir": DIR,
+        "fname": "{alg}-n_search={n_search}-n_top={n_top}-{responses_per_sec}",
+        "alg": "ARR",
+        "responses_per_sec": 1,
+    }
+
+    # All t3.xlarge instances; $0.16/hr
+    """
+44.224.32.66:8421/dashboard
+35.80.21.115:8421/dashboard
+44.242.169.248:8421/dashboard
+44.242.137.180:8421/dashboard
+34.222.182.5:8421/dashboard
+35.81.82.44:8421/dashboard
+44.232.183.25:8421/dashboard
+44.234.67.91:8421/dashboard
+44.234.153.235:8421/dashboard
+34.222.204.47:8421/dashboard
+44.233.150.14:8421/dashboard
+35.84.32.89:8421/dashboard
+"""
+
+    search_urls = {
+        1_000: "44.224.32.66",
+        3_000: "35.80.21.115",
+        10_000: "44.242.169.248",
+        30_000: "44.242.137.180",
+        100_000: "34.222.182.5",
+        352_440: "35.81.82.44",
+    }
+
+    jobs = []
+    for n_search, url in search_urls.items():
+        sleep(np.random.uniform(low=1, high=4))
+        config2 = deepcopy(config)
+        config2["url"] = f"http://{url}"
+        config2["n_search"] = n_search
+        config2["n_top"] = 1
+        jobs.append(main(**config2))
+        assert True
+        print(f"\n#### Done with n_search={n_search}\n")
+
+    n_top_urls = {
+        #  1: "",  # already run
+        3: "44.232.183.25",
+        10: "44.234.67.91",
+        30: "44.234.153.235",
+        100: "34.222.204.47",
+        300: "44.233.150.14",
+        1000: "35.84.32.89",
+    }
+    #  search_urls = {352_000: "localhost"}
+    #  n_top_urls = {100: "localhost"}
+    #  jobs = []
+
+    complete_search = max(search_urls.keys())
+    for n_top, url in n_top_urls.items():
+        sleep(np.random.uniform(low=1, high=4))
+        config2 = deepcopy(config)
+        config2["url"] = f"http://{url}"
+        config2["n_search"] = complete_search
+        config2["n_top"] = n_top
+        jobs.append(main(**config2))
+        assert True
+        print(f"\n#### Done with n_top={n_top}\n")
+
+    out = await asyncio.gather(*jobs)
+    assert all(out)
+    return True
+
+
 if __name__ == "__main__":
     #  asyncio.run(run_rates())
-    asyncio.run(run_searches())
+    #  asyncio.run(run_searches())
+    asyncio.run(run_salmon_searches())
