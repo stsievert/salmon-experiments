@@ -1,1 +1,0 @@
-export OMP_NUM_THREADS=1 export MKL_NUM_THREADS=1; export NUMEXPR_NUM_THREADS=1; export VECLIB_MAXIMUM_THREADS=1; export OPENBLAS_NUM_THREADS=1; dask-worker --nthreads 1 --nprocs 30 144.92.142.180:8786
