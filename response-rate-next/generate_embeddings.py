@@ -175,10 +175,9 @@ if __name__ == "__main__":
     correct = (dl < dr).mean()
     print(f"Correct {100 * correct}% of the time")
 
-    # Generate random responses
     static = dict(X_test=X_test, n=n, d=2, verbose=10_000)
     MAX_EPOCHS = 10_000_000
-    R_EPOCHS = 1_000_000
+    #  MAX_EPOCHS = 4
 
     def _get_train_data(p: Path) -> np.ndarray:
         raw = msgpack.loads(p.read_bytes(), raw=False)
@@ -196,7 +195,7 @@ if __name__ == "__main__":
             num_ans=num_ans,
             sampling="salmon",
             noise_model=nm,
-            meta={"alg": "ARR", "fname": str(f)},
+            meta={"alg": "ARR", "fname": f.name, "path": str(f)},
             max_epochs=MAX_EPOCHS,
             **_get_kwargs(nm),
             **static,
@@ -211,31 +210,35 @@ if __name__ == "__main__":
 
     def _get_priority(d: Dict[str, Any]) -> float:
         base = 10
-        p = 2 * base / (1e-3 + (d["num_ans"] / 2_500))
+        fname = d["meta"]["fname"]
+
+        p = 1.0 * base / (1e-3 + (d["num_ans"] / 5_000))
+
         if d["noise_model"] == "CKL":
             p += base
-        fname = d["meta"]["fname"]
         if "n_top=3" in fname:
             p += base
         if "n_search=30" in fname:
-            p += 2 * base
+            p += base
         return p
 
     job_kwargs = list(sorted(job_kwargs, key=lambda d: -1 * _get_priority(d)))
-    keys = ["noise_model", "sampling", "num_ans"]  # , "meta"]
+    keys = ["noise_model", "num_ans"]  # , "meta"]
     show = [{k: j[k] for k in keys} for j in job_kwargs]
     for s, j in zip(show, job_kwargs):
-        s.update(j["meta"])
+        fname = j["meta"]["fname"]
+        _ = fname.replace("ARR-", "").replace("-1_responses.csv.zip", "")
+        n_search, n_top = _.split("-")
+        s.update(n_search=n_search.replace("n_search=", ""), n_top=n_top.replace("n_top=", ""))
+        s["num_ans"] //= 1000
 
     from zipfile import ZipFile
 
     print(f"Starting to submit those {len(job_kwargs)} jobs...")
 
-if False:
     client = Client("localhost:8786")
     d = client.run(_check_version)
     assert all(list(d.values()))
-
     futures = []
     for k, kwargs in enumerate(job_kwargs):
         kwargs["X_train"] = client.scatter(kwargs["X_train"])
@@ -256,65 +259,6 @@ if False:
         _keys = ["noise_model", "sampling", "num_ans", "meta__alg"]
         print(f"{i} / {len(job_kwargs)}", {k: meta.get(k, "") for k in _keys})
         with open(
-            f"/scratch/ssievert/next-comparison/io-cluster-v2/{i}-v2.msgpack", "wb"
+            f"/scratch/ssievert/arr-search/io-cluster/{i}.msgpack", "wb"
         ) as f2:
             msgpack.dump(save, f2)
-
-
-
-if False:
-    def _get_already_run_jobs(fname: str, keys) -> List[Dict[str, Any]]:
-        jobs = []
-        with ZipFile(fname) as zf:
-            for fname in zf.namelist():
-                with zf.open(fname) as f:
-                    raw = f.read()
-                rare = msgpack.loads(raw, raw=False)
-                mrare = rare["meta"]
-                medium = {
-                    k: mrare[k if "epochs" not in k else f"est__{k}"] for k in keys
-                }
-                medium["meta"] = {
-                    k.replace("meta__", ""): mrare[k]
-                    for k in mrare.keys()
-                    if "meta__" in k
-                }
-                jobs.append(medium)
-            return jobs
-
-    ident_keys = ["num_ans", "sampling", "noise_model", "shuffle_seed"]
-    already_run = _get_already_run_jobs("_io/embeddings-v1-save.zip", ident_keys)
-
-    def _same_job(j1: Dict[str, Any], j2: Dict[str, Any]) -> bool:
-        _j2 = {k: j2[k] for k in j2.keys() if "X_" not in k}
-        j1 = deepcopy(j1)
-        j2 = deepcopy(_j2)
-        shuffle_seed = j1["shuffle_seed"]
-        if shuffle_seed is None:
-            j1.pop("shuffle_seed")
-        else:
-            if "shuffle_seed" not in j2:
-                j2["shuffle_seed"] = j1["shuffle_seed"]
-
-        assert set(j1.keys()).issubset(set(j2.keys()))
-        for k in j1.keys():
-            if j1[k] != j2[k]:
-                return False
-        return True
-
-    to_run = [j for j in job_kwargs if not any(_same_job(ar, j) for ar in already_run)]
-    print(f"{len(already_run)} jobs have finished")
-    print(f"{len(to_run)} jobs will be launched")
-    same_jobs = [j for j in to_run if any(_same_job(ar, j) for ar in already_run)]
-    print(f"{len(same_jobs)} finished jobs are being re-submitted...", flush=True)
-    assert not len(same_jobs)
-    from time import sleep
-
-    sleep(1)
-    print(f"...that number is 0")
-    print("Saving jobs to submit to disk to make sure...")
-    job_kwargs = to_run
-    with open("_to_submit.msgpack", "wb") as f:
-        to_save = [{k: j.get(k, None) for k in ident_keys} for j in job_kwargs]
-        msgpack.dump(to_save, f)
-
