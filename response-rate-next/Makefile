@@ -6,7 +6,7 @@ up:
 
 
 down:
-	scp -r $(DNS):/scratch/ssievert/arr-search/embeddings.zip _down/
+	scp -r $(DNS):/scratch/ssievert/arr-search/embeddings-arr.zip _down/
 
 launch:
 	conda activate salmon
