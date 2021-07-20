@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import Tuple, List, Any, Dict
 from distributed import Client, as_completed
 from copy import deepcopy
+import sys
+from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
@@ -29,6 +31,7 @@ def random_responses(T: List[int], n=90, num=20_000, random_state=42) -> np.ndar
 def _X_test(T: List[int]) -> np.ndarray:
     n = 90
     return random_responses(T, num=60_000, random_state=42)
+
 
 def _X_test_viz(T: List[int], random_state=42 ** 2) -> np.ndarray:
     n = 90
@@ -166,6 +169,60 @@ def _check_version():
     return True
 
 
+def _finished_metas():
+    params = []
+    with ZipFile("_io/embeddings-arr.zip") as zf:
+        for f in zf.filelist:
+            raw = zf.read(f)
+            rare = msgpack.unpackb(raw)
+            params.append(rare["meta"])
+    return params
+
+
+def __flatten(d, prefix=""):
+    if isinstance(d, (int, float, str, bool)):
+        return d
+    out = {f"{prefix}{k}": __flatten(v, prefix=f"{k}__") for k, v in d.items()}
+    return out
+
+
+def _flatten(j: Dict[str, Any]) -> Dict[str, Any]:
+    out = {k: __flatten(v, prefix=f"{k}__") for k, v in j.items()}
+    out2 = deepcopy(out)
+    for k, v in out.items():
+        if isinstance(v, dict):
+            out2.update(v)
+            out2.pop(k)
+    return out2
+
+
+def _fmt_like_complete(j):
+    j = deepcopy(j)
+    est_keys = ["max_epochs", "noise_model", "verbose"]
+    for k in est_keys:
+        v = j.pop(k)
+        j[f"est__{k}"] = v
+    return j
+
+
+def _uncompleted(jobs: List[dict]) -> List[dict]:
+    run_jobs = _finished_metas()
+    run_jobs2 = [set(j.items()) for j in run_jobs]
+
+    jobs2 = [
+        {k: v for k, v in j.items() if k not in ["X_train", "X_test"]} for j in jobs
+    ]
+    jobs3 = [_flatten(j) for j in jobs2]
+
+    jobs4 = [_fmt_like_complete(j) for j in jobs3]
+    jobs5 = [set(j.items()) for j in jobs4]
+    not_run_idx = [k for k, j in enumerate(jobs5) if all(not j.issubset(_) for _ in run_jobs2)]
+
+    i = 4
+    selected_jobs = [j for j in run_jobs2 if jobs5[i].issubset(j)]
+    breakpoint()
+    return [jobs[i] for i in not_run_idx]
+
 if __name__ == "__main__":
     n = 90
     T = targets.get(n)
@@ -229,12 +286,17 @@ if __name__ == "__main__":
         fname = j["meta"]["fname"]
         _ = fname.replace("ARR-", "").replace("-1_responses.csv.zip", "")
         n_search, n_top = _.split("-")
-        s.update(n_search=n_search.replace("n_search=", ""), n_top=n_top.replace("n_top=", ""))
+        s.update(
+            n_search=n_search.replace("n_search=", ""),
+            n_top=n_top.replace("n_top=", ""),
+        )
         s["num_ans"] //= 1000
 
     from zipfile import ZipFile
 
     print(f"Starting to submit those {len(job_kwargs)} jobs...")
+    job_kwargs2 = _uncompleted(job_kwargs)
+    sys.exit(0)
 
     client = Client("localhost:8786")
     d = client.run(_check_version)
@@ -258,7 +320,5 @@ if __name__ == "__main__":
         }
         _keys = ["noise_model", "sampling", "num_ans", "meta__alg"]
         print(f"{i} / {len(job_kwargs)}", {k: meta.get(k, "") for k in _keys})
-        with open(
-            f"/scratch/ssievert/arr-search/io-cluster/{i}.msgpack", "wb"
-        ) as f2:
+        with open(f"/scratch/ssievert/arr-search/io-cluster2/{i}.msgpack", "wb") as f2:
             msgpack.dump(save, f2)
