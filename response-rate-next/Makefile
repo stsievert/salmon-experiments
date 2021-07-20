@@ -11,4 +11,4 @@ down:
 launch:
 	conda activate salmon
 	cd /scratch/ssievert/dask-tmp
-	export OMP_NUM_THREADS=1; export OPENBLAS_NUM_THREADS=1; export MKL_NUM_THREADS=1; export VECLIB_MAXIMUM_THREADS=1; export NUMEXPR_NUM_THREADS=1; dask-worker --nthreads 1 --nprocs 60 144.92.142.180:8786
+	export OMP_NUM_THREADS=1; export OPENBLAS_NUM_THREADS=1; export MKL_NUM_THREADS=1; export VECLIB_MAXIMUM_THREADS=1; export NUMEXPR_NUM_THREADS=1; dask-worker --nthreads 1 --nprocs 20 144.92.142.180:8786

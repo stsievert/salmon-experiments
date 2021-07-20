@@ -4,6 +4,7 @@ from distributed import Client, as_completed
 from copy import deepcopy
 import sys
 from zipfile import ZipFile
+import json
 
 import numpy as np
 import pandas as pd
@@ -165,63 +166,56 @@ def _serialize(d):
 def _check_version():
     import salmon
 
-    assert "v0.6.1rc5+2" in salmon.__version__
+    assert "v0.6.1rc6+7" in salmon.__version__
     return True
 
 
-def _finished_metas():
-    params = []
-    with ZipFile("_io/embeddings-arr.zip") as zf:
-        for f in zf.filelist:
-            raw = zf.read(f)
-            rare = msgpack.unpackb(raw)
-            params.append(rare["meta"])
-    return params
+def _same_job(j1, j2):
+    show1 = {k: v for k, v in j1.items() if k not in ["X_train", "X_test"]}
+    match = ["d", "n", "sampling", "noise_model"]
+
+    if not all(j1[k] == j2[k] for k in match):
+        return False
+
+    if j1["num_ans"] != j2["len_X_train"]:
+        return False
+
+    for k in j1["meta"].keys():
+        if j1["meta"][k] != j2[f"meta__{k}"]:
+            return False
+    remove = ["est__noise_model", "est__max_epochs", "est__random_state", "est__verbose", "len_X_test", "n_test", "shuffle_seed", "verbose"]
+    show2 = {k: v for k, v in j2.items() if k not in remove}
+
+    assert all(show1[k] == show2[k] for k in match)
+    assert show1["num_ans"] == show2["len_X_train"] == show2["num_ans"] == show2["n_train"]
+    for k in ["alg", "fname", "path"]:
+        assert show1["meta"][k] == show2[f"meta__{k}"]
+        assert type(show1["meta"][k]) == type(show2[f"meta__{k}"])
+    if show1["noise_model"] == "CKL":
+        assert show1["module__mu"] == show2["est__module__mu"]
+    assert j1["max_epochs"] == j2["est__max_epochs"]
+
+    checked_keys = ["num_ans", "meta/alg", "meta/fname", "meta/path", "module__mu", "max_epochs", *match]
+    unchecked = set(show1.keys()) - {"meta"}
+    unchecked.update({f"meta/{k}" for k in show1["meta"].keys()})
+
+    unchecked -= set(checked_keys)
+    assert unchecked.issubset({"verbose"})
+    return True
 
 
-def __flatten(d, prefix=""):
-    if isinstance(d, (int, float, str, bool)):
-        return d
-    out = {f"{prefix}{k}": __flatten(v, prefix=f"{k}__") for k, v in d.items()}
+def _already_run(j, jobs):
+    if any(_same_job(j, _) for _ in jobs):
+        return True
+    return False
+
+
+def _filter_jobs(jobs):
+    with open("arr_jobs.json") as f:
+        finished = json.load(f)
+    out = [j for j in jobs if not _already_run(j, finished)]
     return out
 
-
-def _flatten(j: Dict[str, Any]) -> Dict[str, Any]:
-    out = {k: __flatten(v, prefix=f"{k}__") for k, v in j.items()}
-    out2 = deepcopy(out)
-    for k, v in out.items():
-        if isinstance(v, dict):
-            out2.update(v)
-            out2.pop(k)
-    return out2
-
-
-def _fmt_like_complete(j):
-    j = deepcopy(j)
-    est_keys = ["max_epochs", "noise_model", "verbose"]
-    for k in est_keys:
-        v = j.pop(k)
-        j[f"est__{k}"] = v
-    return j
-
-
-def _uncompleted(jobs: List[dict]) -> List[dict]:
-    run_jobs = _finished_metas()
-    run_jobs2 = [set(j.items()) for j in run_jobs]
-
-    jobs2 = [
-        {k: v for k, v in j.items() if k not in ["X_train", "X_test"]} for j in jobs
-    ]
-    jobs3 = [_flatten(j) for j in jobs2]
-
-    jobs4 = [_fmt_like_complete(j) for j in jobs3]
-    jobs5 = [set(j.items()) for j in jobs4]
-    not_run_idx = [k for k, j in enumerate(jobs5) if all(not j.issubset(_) for _ in run_jobs2)]
-
-    i = 4
-    selected_jobs = [j for j in run_jobs2 if jobs5[i].issubset(j)]
-    breakpoint()
-    return [jobs[i] for i in not_run_idx]
 
 if __name__ == "__main__":
     n = 90
@@ -234,7 +228,6 @@ if __name__ == "__main__":
 
     static = dict(X_test=X_test, n=n, d=2, verbose=10_000)
     MAX_EPOCHS = 10_000_000
-    #  MAX_EPOCHS = 4
 
     def _get_train_data(p: Path) -> np.ndarray:
         raw = msgpack.loads(p.read_bytes(), raw=False)
@@ -263,6 +256,12 @@ if __name__ == "__main__":
     ]
 
     job_kwargs = salmon_searches
+    assert len(job_kwargs) == 648
+    job_kwargs = _filter_jobs(job_kwargs)
+    assert len(job_kwargs) == 322
+    job_kwargs = [j for j in job_kwargs if j["noise_model"] == "CKL"]
+    assert len(job_kwargs) == 79
+
     print("\nlen(TOTAL_JOBS) =", len(job_kwargs))
 
     def _get_priority(d: Dict[str, Any]) -> float:
@@ -295,13 +294,13 @@ if __name__ == "__main__":
     from zipfile import ZipFile
 
     print(f"Starting to submit those {len(job_kwargs)} jobs...")
-    job_kwargs2 = _uncompleted(job_kwargs)
-    sys.exit(0)
 
-    client = Client("localhost:8786")
+    client = Client("127.0.0.1:8786")
     d = client.run(_check_version)
     assert all(list(d.values()))
     futures = []
+
+    #  fit_estimator(**job_kwargs[0])
     for k, kwargs in enumerate(job_kwargs):
         kwargs["X_train"] = client.scatter(kwargs["X_train"])
         kwargs["X_test"] = client.scatter(kwargs["X_test"])
