@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<style type="text/css">
+
+.plot1 { height: 460px;
+         width: 324px;
+}
+
+.plot2 { height: 460px;
+    width: 324px;
+}
+
+.plot3 { height: 460px;
+    width: 324px;
+}
+
+.plot4 { height: 460px;
+    width: 324px;
+}
+
+.embedding {
+    background-color: white;
+    border-style                :   solid;
+    border-width                :   3px;
+    border-color                :   #C0C0C0;
+    border-radius               :   3px;
+    width                       :   800px;
+    height                      :   500px;
+}
+.overlay {
+    fill: none;
+    pointer-events: all;
+}
+.tooltip {
+    position: absolute;
+    pointer-events: none;
+    background-color: navy;
+}
+</style>
+
+
+
+<body>
+
+<div id="embedding" class="embedding"></div>
+
+
+</body>
+<script src="js/jquery.js"></script>
+<script src="js/d3.js"></script>
+<script src="charts2.js"></script>
+
+<script type="text/javascript">
+    var embeddingData=[{'y': 0.20422596055538061, 'index': 0, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0126.png'}, 'x': 0.77727597279333627}, {'y': -0.067031551213432336, 'index': 1, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0208.png'}, 'x': 0.38166041540998846}, {'y': 0.67893157804963522, 'index': 2, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0076.png'}, 'x': 0.97353417908513762}, {'y': -0.30082754525905536, 'index': 3, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0326.png'}, 'x': -0.31023581337460465}, {'y': -0.095483902998796222, 'index': 4, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0526.png'}, 'x': -1.3001963417585098}, {'y': -0.38335563654558902, 'index': 5, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0322.png'}, 'x': -0.27865500467812682}, {'y': -0.25844456932640175, 'index': 6, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0312.png'}, 'x': -0.18650542756626759}, {'y': 0.57175235334657959, 'index': 7, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0036.png'}, 'x': 1.430113322021686}, {'y': -0.40543195528441905, 'index': 8, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0414.png'}, 'x': -0.8574473848870493}, {'y': -0.2590295866425773, 'index': 9, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0256.png'}, 'x': 0.11966421967723473}, {'y': 0.41900200866486681, 'index': 10, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0074.png'}, 'x': 0.97541869985021334}, {'y': 0.287256788433852, 'index': 11, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0050.png'}, 'x': 1.3156854412705727}, {'y': 0.20196419678848299, 'index': 12, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0470.png'}, 'x': -1.2990845542143497}, {'y': 0.67886882191486742, 'index': 13, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0022.png'}, 'x': 1.5482483042548223}, {'y': -0.40268744726222233, 'index': 14, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0430.png'}, 'x': -1.0187472477965238}, {'y': -0.069922639584520413, 'index': 15, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0254.png'}, 'x': 0.1407969532869032}, {'y': -0.036958163936212214, 'index': 16, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0572.png'}, 'x': -1.3745657068256025}, {'y': -0.06842447524820576, 'index': 17, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0200.png'}, 'x': 0.2792296714719173}, {'y': -0.080728899498087356, 'index': 18, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0524.png'}, 'x': -1.3806382323353847}, {'y': -0.12117739721633455, 'index': 19, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0220.png'}, 'x': 0.3538869794116658}, {'y': -0.26239652294433818, 'index': 20, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0438.png'}, 'x': -1.0518467787605705}, {'y': -0.43952328438170563, 'index': 21, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0454.png'}, 'x': -1.2203219804337657}, {'y': 0.0076375724732594937, 'index': 22, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0112.png'}, 'x': 0.88542711531414675}, {'y': 0.11766559413818153, 'index': 23, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0494.png'}, 'x': -1.3912092787125663}, {'y': 0.060056641356811477, 'index': 24, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0194.png'}, 'x': 0.52981807044687879}, {'y': 0.058347114351576621, 'index': 25, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0152.png'}, 'x': 0.66496255839485374}, {'y': -0.18915787898356137, 'index': 26, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0420.png'}, 'x': -0.88134160147040752}, {'y': 0.14776471598283591, 'index': 27, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0142.png'}, 'x': 0.71226812364703185}, {'y': 0.18902845932242085, 'index': 28, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0114.png'}, 'x': 0.91785827061980396}, {'y': -0.18119636927373609, 'index': 29, 'target': {'primary_type': 'image', 'primary_description': 'http://next.discovery.s3.amazonaws.com/2015-05-28_strangefruit30/i0184.png'}, 'x': 0.54507446115485236}]
+    
+    charts.plotCurrentEmbedding(embeddingData,"embedding");
+
+
+</script>
+
