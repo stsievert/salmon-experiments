@@ -1,220 +1,323 @@
 from pathlib import Path
-import pandas as pd
-from typing import Dict, Any, List
-import numpy as np
-from dask.distributed import Future, Client, get_client, as_completed
-import msgpack
-from zipfile import ZipFile, ZIP_LZMA
-from io import BytesIO
-from typing import Tuple, Dict, Any
-import random as random_mod
+from typing import Tuple, List, Any, Dict
+from distributed import Client, as_completed
+from copy import deepcopy
+import sys
+from zipfile import ZipFile
+import json
 
-from salmon.triplets.offline import OfflineEmbedding
+import numpy as np
+import pandas as pd
+from sklearn.utils import check_random_state
+import msgpack
+
+import response_model
 import targets
+from responses import _cook_next
+
+
+def random_responses(T: List[int], n=90, num=20_000, random_state=42) -> np.ndarray:
+    X = []
+    rng = np.random.RandomState(random_state)
+    for _ in range(num):
+        i_h, i_l, i_r = _random_query(n, rng)
+        h, l, r = T[i_h], T[i_l], T[i_r]
+        winner = response_model.alien_egg(h, l, r, random_state=rng)
+        assert winner in [0, 1]
+        ans = [i_h, i_l, i_r] if winner == 0 else [i_h, i_r, i_l]
+        X.append(ans)
+    return np.array(X).astype(int)
+
+
+def _X_test(T: List[int]) -> np.ndarray:
+    n = 90
+    return random_responses(T, num=60_000, random_state=42)
+
+
+def _X_test_viz(T: List[int], random_state=42 ** 2) -> np.ndarray:
+    n = 90
+    v0 = _X_test(T)
+
+    rng = np.random.RandomState(random_state)
+    _T = np.array(T).astype(int)
+
+    idx = rng.choice(len(T), size=(60_000, 3)).astype(int)
+    h, w, l = idx[:, 0], idx[:, 1], idx[:, 2]
+    repeats = (h == w) | (h == l) | (w == l)
+    idx = idx[~repeats]
+    for k, (i_h, i_0, i_1) in enumerate(idx):
+        winner = response_model.alien_egg(T[i_h], T[i_0], T[i_1])
+        if winner == 1:
+            idx[k, 1], idx[k, 2] = i_1, i_0
+
+    return np.vstack((v0, idx))
+
+
+def _random_query(n: int, random_state) -> Tuple[int, int, int]:
+    rng = check_random_state(random_state)
+    h, a, b = rng.choice(n, size=3, replace=False).astype(int)
+    return h, a, b
+
+
+def fit_estimator(
+    *,
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+    n: int,
+    num_ans: int,
+    sampling,
+    noise_model: str,
+    d: int = 2,
+    max_epochs: int = 1_000_000,
+    shuffle_seed=None,
+    meta=None,
+    **kwargs,
+) -> Tuple["OfflineEmbedding", Dict[str, Any]]:
+    import torch
+
+    torch.set_num_threads(1)
+
+    from salmon.triplets.offline import OfflineEmbedding
+
+    if meta is None:
+        meta = {}
+    assert sampling is not None
+    if sampling == "random":
+        assert shuffle_seed is not None
+        rng = np.random.RandomState(shuffle_seed)
+        rng.shuffle(X_train)
+    X_train = X_train[:num_ans]
+    assert X_train.shape == (num_ans, 3)
+    X_train_minimal = X_train.astype("int8")
+    X_test_minimal = X_test.astype("int8")
+    assert np.allclose(X_train_minimal, X_train)
+    assert np.allclose(X_test_minimal, X_test)
+    X_test = X_test_minimal
+    X_train = X_train_minimal
+
+    assert all(arr.dtype.name == "int8" for arr in [X_train, X_test])
+    est = OfflineEmbedding(
+        n=n,
+        d=d,
+        random_state=400,
+        max_epochs=max_epochs,
+        noise_model=noise_model,
+        **kwargs,
+    )
+    est.fit(X_train, X_test)
+
+    est_kwargs = {f"est__{k}": v for k, v in kwargs.items()}
+    meta = {f"meta__{k}": v for k, v in meta.items()}
+    ret_dict = {
+        "len_X_train": len(X_train),
+        "len_X_test": len(X_test),
+        "n_train": len(X_train),
+        "n_test": len(X_test),
+        "n": n,
+        "d": d,
+        "num_ans": num_ans,
+        "sampling": sampling,
+        "shuffle_seed": shuffle_seed,
+        "noise_model": noise_model,
+        "num_ans": num_ans,
+        "est__random_state": est.random_state,
+        "est__max_epochs": est.max_epochs,
+        "est__noise_model": est.noise_model,
+        **est_kwargs,
+        **meta,
+    }
+    return est, ret_dict
+
+
+def _get_kwargs(nm: str) -> Dict[str, float]:
+    # From Sec 3.2/bottom of page 6 of the NEXT paper
+    # https://papers.nips.cc/paper/2015/file/89ae0fe22c47d374bc9350ef99e01685-Paper.pdf
+    if nm == "CKL":
+        return {"module__mu": 0.05}
+    elif nm in ["TSTE", "SOE"]:
+        return {}
+    raise ValueError(f"nm={nm} not in ['CKL', 'TSTE', 'SOE']")
+
+
+def _get_num_ans(n_answers, n, lower=None):
+    num_ans = list(range(10 * n, 100 * n, 10 * n))
+    num_ans += list(range(100 * n, 300 * n, 30 * n))
+    num_ans += list(range(300 * n, 1000 * n, 100 * n))
+    num_ans = [n for n in num_ans if n <= n_answers]
+    if lower:
+        num_ans = [n for n in num_ans if lower <= n]
+    if max(num_ans) < 0.95 * n_answers:
+        num_ans += [n_answers]
+    return num_ans
+
+
+def _serialize(d):
+    if isinstance(d, np.integer):
+        return int(d)
+    if isinstance(d, (np.float64, float, np.floating)):
+        return float(d)
+    if isinstance(d, list):
+        return [_serialize(_) for _ in d]
+    if isinstance(d, dict):
+        return {k: _serialize(v) for k, v in d.items()}
+    return d
 
 
 def _check_version():
     import salmon
 
-    assert "v0.6.0+43" in salmon.__version__
-    return salmon.__version__
+    assert "v0.6.1rc6+7" in salmon.__version__
+    return True
 
 
-def _get_responses(
-    p: Path, n: int, shuffle: bool = True, seed: int = 42, length=None,
-) -> np.ndarray:
-    if p.is_dir():
-        p = p / "responses.csv.zip"
-    if not p.exists():
-        raise FileNotFoundError(f"No such file '{p}'")
-    if "csv" in p.name:
-        df = pd.read_csv(p)
-    elif "parquet" in p.name:
-        df = pd.read_parquet(p)
-    else:
-        raise ValueError(f"Filetype of {p} not CSV or Parquet")
-    cols = ["head", "winner", "loser"]
-    responses = df[cols].to_numpy().astype("int16")
-    assert 0 == responses.min() < responses.max() == n - 1
-    assert len(np.unique(responses)) == n
-    if length:
-        assert len(responses) >= length
-    return responses
+def _same_job(j1, j2):
+    show1 = {k: v for k, v in j1.items() if k not in ["X_train", "X_test"]}
+    match = ["d", "n", "sampling", "noise_model"]
+
+    if not all(j1[k] == j2[k] for k in match):
+        return False
+
+    if j1["num_ans"] != j2["len_X_train"]:
+        return False
+
+    for k in j1["meta"].keys():
+        if j1["meta"][k] != j2[f"meta__{k}"]:
+            return False
+    remove = ["est__noise_model", "est__max_epochs", "est__random_state", "est__verbose", "len_X_test", "n_test", "shuffle_seed", "verbose"]
+    show2 = {k: v for k, v in j2.items() if k not in remove}
+
+    assert all(show1[k] == show2[k] for k in match)
+    assert show1["num_ans"] == show2["len_X_train"] == show2["num_ans"] == show2["n_train"]
+    for k in ["alg", "fname", "path"]:
+        assert show1["meta"][k] == show2[f"meta__{k}"]
+        assert type(show1["meta"][k]) == type(show2[f"meta__{k}"])
+    if show1["noise_model"] == "CKL":
+        assert show1["module__mu"] == show2["est__module__mu"]
+    assert j1["max_epochs"] == j2["est__max_epochs"]
+
+    checked_keys = ["num_ans", "meta/alg", "meta/fname", "meta/path", "module__mu", "max_epochs", *match]
+    unchecked = set(show1.keys()) - {"meta"}
+    unchecked.update({f"meta/{k}" for k in show1["meta"].keys()})
+
+    unchecked -= set(checked_keys)
+    assert unchecked.issubset({"verbose"})
+    return True
 
 
-def _get_num_response(n, limit=None):
-    num_ans = [i * n for i in range(1, 50, 5)]
-    num_ans += [i * n for i in range(50, 100, 10)]
-    num_ans += [i * n for i in range(100, 200, 20)]
-    num_ans += [i * n for i in range(200, 500, 50)]
-    num_ans += [i * n for i in range(500, 1000, 100)]
-    num_ans += [i * n for i in range(1000, 2000, 200)]
-    if limit:
-        num_ans = [n for n in num_ans if n <= limit]
-    return num_ans
+def _already_run(j, jobs):
+    if any(_same_job(j, _) for _ in jobs):
+        return True
+    return False
 
 
-def _get_estimator(
-    *,
-    X_train: np.ndarray,
-    X_test: np.ndarray,
-    n: int,
-    d: int = 2,
-    num_ans: int,
-    seed=None,
-    sampling=None,
-    max_epochs=1_000_000,
-    **kwargs,
-) -> Tuple[OfflineEmbedding, Dict[str, Any]]:
-    assert sampling is not None
-    if seed:
-        rng = np.random.RandomState(seed)
-        rng.shuffle(X_train)
-    X_train = X_train[:num_ans]
-    assert X_train.shape == (num_ans, 3)
-
-    est = OfflineEmbedding(n=n, d=d, random_state=42, max_epochs=max_epochs, **kwargs)
-    est.fit(X_train, X_test)
-    est_kwargs = {f"est__{k}": v for k, v in kwargs.items()}
-    ret_dict = {
-        "n": n,
-        "d": d,
-        "n_train": len(X_train),
-        "n_test": len(X_test),
-        "seed": seed,
-        "num_ans": num_ans,
-        "sampling": sampling,
-        "est__random_state": est.random_state,
-        **est_kwargs,
-    }
-    return est, ret_dict
-
-
-def _get_kwargs(nm):
-    if nm in ["SOE", "TSTE"]:
-        return {}
-    elif nm == "CKL":
-        return {"module__mu": 0.05}
-    raise ValueError(f"nm={nm} not recognized")
-
-
-def _launch_jobs(
-    n: int,
-    X_active: np.ndarray,
-    X_random: np.ndarray,
-    X_test: np.ndarray,
-    d: int = 2,
-    n_random=10,
-) -> List[Future]:
-    client = get_client()
-
-    limits = {30: 12_000}
-    assert X_active.max() == n - 1, X_active.max()
-    assert X_random.max() == n - 1, X_random.max()
-    assert X_test.max() == n - 1, X_test.max()
-
-    active_num_ans = _get_num_response(n, limit=limits.get(n, len(X_active)))
-    difficulty = np.round(10 * d * n * np.log(n)).astype(int)
-    print("Active ratio:", max(active_num_ans) / difficulty, len(X_active))
-
-    rand_num_ans = _get_num_response(n, limit=limits.get(n, len(X_random)))
-    print("Random ratio:", max(rand_num_ans) / difficulty, len(X_random))
-
-    kwargs = dict(n=n, d=d, X_test=X_test)
-    #  kwargs["max_epochs"] = 100_000  # TODO DEBUG: delete
-    X_active_f = client.scatter(X_active)
-    active_kwargs = [
-        {
-            "X_train": X_active_f,
-            "seed": None,
-            "sampling": "active",
-            "num_ans": num_ans,
-            "noise_model": nm,
-            "ident": f"{nm}-active",
-            **kwargs,
-            **_get_kwargs(nm),
-        }
-        for num_ans in active_num_ans
-        for nm in ["CKL"]
-    ]
-
-    X_random_f = client.scatter(X_random)
-    random_kwargs = [
-        {
-            "X_train": X_random_f,
-            "seed": i + 1,
-            "num_ans": num_ans,
-            "sampling": "random",
-            "noise_model": nm,
-            "ident": f"{nm}-random",
-            **kwargs,
-            **_get_kwargs(nm),
-        }
-        for i in range(n_random)
-        for num_ans in rand_num_ans
-        for nm in ["CKL"]
-    ]
-
-    all_kwargs = active_kwargs + random_kwargs
-    random_mod.shuffle(all_kwargs)
-    futures = client.map(lambda d: _get_estimator(**d), all_kwargs)
-
-    return futures
+def _filter_jobs(jobs):
+    with open("arr_jobs.json") as f:
+        finished = json.load(f)
+    out = [j for j in jobs if not _already_run(j, finished)]
+    return out
 
 
 if __name__ == "__main__":
-    TODAY = "2021-04-16"
-    DIR = Path(f"io/{TODAY}/")
-    #  N = [30]#, 90, 180, 300]
-    N = [90, 180, 300]
-    DIRS = [DIR / f"n={n}" for n in N]
-    assert all(d.exists() for d in DIRS)
-    RANDOM_DIR = Path("io/random/train")
-    TEST_DIR = Path("io/random/test")
-    RANDOM = {n: RANDOM_DIR / f"n={n}-responses.parquet" for n in N}
+    n = 90
+    T = targets.get(n)
+    X_test = _X_test(T)
+    dl = np.abs(X_test[:, 0] - X_test[:, 1])
+    dr = np.abs(X_test[:, 0] - X_test[:, 2])
+    correct = (dl < dr).mean()
+    print(f"Correct {100 * correct}% of the time")
 
-    active = {n: _get_responses(p, n) for n, p in zip(N, DIRS)}
-    random = {n: _get_responses(p, n) for n, p in RANDOM.items()}
+    static = dict(X_test=X_test, n=n, d=2, verbose=10_000)
+    MAX_EPOCHS = 10_000_000
 
-    #  TEST = {n: TEST_DIR / f"n={n}-responses.parquet" for n in N}
-    #  test = {n: _get_responses(p, n) for n, p in TEST.items()}
-    test = {n: targets.ground_truth_responses(n, length=20_000) for n in N}
+    def _get_train_data(p: Path) -> np.ndarray:
+        raw = msgpack.loads(p.read_bytes(), raw=False)
+        df = _cook_next(raw)
+        return df[["head", "winner", "loser"]].to_numpy().astype(int)
 
-    client = Client("localhost:8786")
-    _d = client.run(_check_version)
-    print(set(_d.values()))
-    assert all(list(_d.values()))
+    DIR = Path("salmon/io/2021-07-01-arr-search/")
+    X_trains = {
+        f: pd.read_csv(f)[["head", "winner", "loser"]].to_numpy().astype(int)
+        for f in DIR.glob("*responses.csv.zip")
+    }
+    salmon_searches = [
+        dict(
+            X_train=X_train,
+            num_ans=num_ans,
+            sampling="salmon",
+            noise_model=nm,
+            meta={"alg": "ARR", "fname": f.name, "path": str(f)},
+            max_epochs=MAX_EPOCHS,
+            **_get_kwargs(nm),
+            **static,
+        )
+        for nm in ["CKL", "SOE", "TSTE"]
+        for f, X_train in X_trains.items()
+        for num_ans in _get_num_ans(len(X_train), n)
+    ]
 
+    job_kwargs = salmon_searches
+    assert len(job_kwargs) == 648
+    job_kwargs = _filter_jobs(job_kwargs)
+    assert len(job_kwargs) == 322
+    job_kwargs = [j for j in job_kwargs if j["noise_model"] == "CKL"]
+    assert len(job_kwargs) == 79
+
+    print("\nlen(TOTAL_JOBS) =", len(job_kwargs))
+
+    def _get_priority(d: Dict[str, Any]) -> float:
+        base = 10
+        fname = d["meta"]["fname"]
+
+        p = 1.0 * base / (1e-3 + (d["num_ans"] / 5_000))
+
+        if d["noise_model"] == "CKL":
+            p += base
+        if "n_top=3" in fname:
+            p += base
+        if "n_search=30" in fname:
+            p += base
+        return p
+
+    job_kwargs = list(sorted(job_kwargs, key=lambda d: -1 * _get_priority(d)))
+    keys = ["noise_model", "num_ans"]  # , "meta"]
+    show = [{k: j[k] for k in keys} for j in job_kwargs]
+    for s, j in zip(show, job_kwargs):
+        fname = j["meta"]["fname"]
+        _ = fname.replace("ARR-", "").replace("-1_responses.csv.zip", "")
+        n_search, n_top = _.split("-")
+        s.update(
+            n_search=n_search.replace("n_search=", ""),
+            n_top=n_top.replace("n_top=", ""),
+        )
+        s["num_ans"] //= 1000
+
+    from zipfile import ZipFile
+
+    print(f"Starting to submit those {len(job_kwargs)} jobs...")
+
+    client = Client("127.0.0.1:8786")
+    d = client.run(_check_version)
+    assert all(list(d.values()))
     futures = []
-    for n in N:
-        print(f"### n = {n}")
-        _futures = _launch_jobs(n, active[n], random[n], test[n])
-        futures.extend(_futures)
-        #  break  # TODO DEBUG: delete
-    print(len(futures), {type(f) for f in futures})
 
-    zf_kwargs = dict(compression=ZIP_LZMA, compresslevel=9)
-    OUT_DIR = Path("/scratch/ssievert/io/crowdsourcing")
-    out_file = OUT_DIR / "embeddings.zip"
-    with ZipFile(out_file, mode="w", **zf_kwargs) as zf:
-        pass
-    for k, future in enumerate(as_completed(futures)):
-        try:
-            est, meta = future.result()
-        except Exception as e:
-            print(f"Exception on future {k}! {e}")
-            continue
-        history = {k: [h.get(k, None) for h in est.history_] for k in est.history_[0]}
-        to_save = {
+    #  fit_estimator(**job_kwargs[0])
+    for k, kwargs in enumerate(job_kwargs):
+        kwargs["X_train"] = client.scatter(kwargs["X_train"])
+        kwargs["X_test"] = client.scatter(kwargs["X_test"])
+        future = client.submit(fit_estimator, **kwargs, priority=len(job_kwargs) - k)
+        futures.append(future)
+    print("len(futures) =", len(futures))
+
+    for i, future in enumerate(as_completed(futures)):
+        est, meta = future.result()
+        meta = _serialize(meta)
+        save = {
             "embedding": est.embedding_.tolist(),
-            "history": history,
-            "perf": est.history_[-1],
-            "params": est.get_params(),
             "meta": meta,
+            "performance": _serialize(est.history_[-1]),
+            "history": _serialize(est.history_),
         }
-        print(k, len(futures))
-        with BytesIO() as f:
-            msgpack.dump(to_save, f)
-            out = f.getvalue()
-        with ZipFile(out_file, mode="a", **zf_kwargs) as zf:
-            zf.writestr(f"{k}.msgpack", out)
+        _keys = ["noise_model", "sampling", "num_ans", "meta__alg"]
+        print(f"{i} / {len(job_kwargs)}", {k: meta.get(k, "") for k in _keys})
+        with open(f"/scratch/ssievert/arr-search/io-cluster2/{i}.msgpack", "wb") as f2:
+            msgpack.dump(save, f2)
