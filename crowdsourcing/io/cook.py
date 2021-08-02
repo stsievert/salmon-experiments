@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from zipfile import ZipFile
 import json
+import yaml
 
 
 _FNAMES = [  # from debug-kevin/triplet_figures_orig/output_embedding.py
@@ -94,10 +95,41 @@ def _process(p: Path) -> pd.DataFrame:
     return raw
 
 
-if __name__ == "__main__":
+def _trim(fname: str) -> str:
+    src = fname.split(" ")[1]
+    url = src.split("=")[1].strip("'")
+    true_fname = url.split("/")[-1]
+    return true_fname
 
-    for f in Path("salmon-raw").glob("*.csv"):
-        raw = pd.read_csv(f)
+
+def _get_target_mapping(n=30):
+    assert n in {30, 90}
+    CONFIGS = []
+    for i in [1, 2, 3, 4, 5]:
+        with open(f"salmon-raw/m{i}/config.txt", "r") as f:
+            CONFIGS.append(yaml.safe_load(f))
+    targets = [config["targets"] for config in CONFIGS]
+    assert {len(t) for t in targets} == {30, 90}
+    assert targets[0] == targets[1] == targets[3]
+    assert targets[2] == targets[4]
+    assert len(targets[0]) == 30
+
+    if n == 30:
+        return {_trim(fname): k for k, fname in enumerate(targets[0])}
+    elif n == 90:
+        return {_trim(fname): k for k, fname in enumerate(targets[2])}
+    raise ValueError(f"n={n} not in [30, 90]")
+
+
+if __name__ == "__main__":
+    targets = {n: _get_target_mapping(n=n) for n in [30, 90]}
+
+    DIRS = [Path("salmon-raw") / f"m{i}/" for i in [1, 2, 3, 4, 5]]
+    for d in DIRS:
+        raw = pd.read_csv(d / "responses.csv")
+        with open(d / "config.txt") as f:
+            config = yaml.safe_load(f)
+
         raw = raw.sort_values(by="datetime_received")
         raw = raw.drop(
             columns=[f"{k}_html" for k in ["left", "right", "head", "winner", "loser"]]
@@ -108,14 +140,20 @@ if __name__ == "__main__":
         )
         raw["timestamp"] = raw["datetime_received"].copy()
         raw = raw.drop(columns=["datetime_received"])
-        raw.to_csv(f"salmon-mrare/{f.name}")
+        for _k in ["winner", "loser", "head", "left", "right"]:
+            raw[_k] = raw[f"{_k}_filename"].apply(targets[config["n"]].get)
+
+        for alg_ident in raw.alg_ident.unique():
+            o = raw[raw.alg_ident == alg_ident]
+            o = o.sort_values(by="timestamp")
+            fname = f"n={config['n']}-alg_ident={alg_ident}"
+            o.to_csv(f"responses/Salmon-{fname}.csv", index=False)
+
     SALMON_COLS = set(raw.columns)
 
     p = Path("next-fig3.json.zip")
     p_verify = (
-        Path("../../orig-next-fig")
-        / "fruit_experiment1"
-        / "participants.json.zip"
+        Path("../../orig-next-fig") / "fruit_experiment1" / "participants.json.zip"
     )
 
     df = _process(p)
@@ -141,7 +179,9 @@ if __name__ == "__main__":
             lambda row: row["left_filename"] if row["right_filename"] == row["winner_filename"] else row["right_filename"], axis=1
         )
         # fmt: on
+        for _k in ["winner", "loser", "head", "left", "right"]:
+            out[_k] = out[f"{_k}_filename"].apply(targets[30].get)
         #  out.columns = ["network_delay",
-        out.to_csv(f"next-mrare/{alg_label}.csv")
+        out.to_csv(f"responses/NEXT-{alg_label}.csv", index=False)
     NEXT_COLS = set(out.columns)
     assert NEXT_COLS == SALMON_COLS - {"score"}
