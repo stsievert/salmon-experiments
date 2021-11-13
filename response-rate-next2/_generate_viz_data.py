@@ -1,4 +1,5 @@
 import warnings
+import sys
 import msgpack
 from typing import List, Dict, Any
 from zipfile import ZipFile
@@ -12,7 +13,7 @@ import targets
 import viz
 
 
-def _get_embeddings(zip_fname: str, history=False) -> List[dict]:
+def _get_embeddings(zip_fname: str, history=False, arr_priority=False) -> List[dict]:
     rares = []
     with ZipFile(zip_fname) as zf:
         for fname in zf.namelist():
@@ -27,6 +28,17 @@ def _get_embeddings(zip_fname: str, history=False) -> List[dict]:
             ):
                 rare["meta"]["sampling"] = "salmon-tste"
             fname = rare["meta"].get("meta__fname", "[random]")
+
+            if arr_priority and "ARR-" in fname and "scores=" in fname:
+                i = fname.find("ARR-")
+                fname = fname[i + 4 :]
+                j = fname.find(".")
+                _p = fname[:j]
+                _, priority = _p.split("=")
+                rare["meta"]["priority"] = priority
+                rares.append(rare)
+                continue
+
             if "rate" in fname:
                 # fname = 'next/io/2021-05-24/rate=0.5_responses.msgpack'
                 rate = fname.split("/")[-1].replace("_responses.msgpack", "")
@@ -59,6 +71,8 @@ def _write_jobs(jobs, filename):
 
 if __name__ == "__main__":
     em = _get_embeddings("_io/embeddings-v5.zip")
+    em += _get_embeddings("_io/embeddings-arr-priority.zip", arr_priority=True)
+    #  sys.exit(1)
 
     rares = em
 
