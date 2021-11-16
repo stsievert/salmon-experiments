@@ -1,0 +1,109 @@
+css: ''
+d: 2
+debrief: Thanks! Use the participant ID below in Mechnical Turk.
+instructions: Select the alien egg on the bottom that is <b>most similar</b> to the
+  alien egg on the top.
+max_queries: 200
+n: 90
+samplers:
+  ARR:
+    n_top: 10
+    random_state: 42
+  RandomSampling: {}
+sampling:
+  probs:
+    ARR: 40
+    RandomSampling: 60
+  samplers_per_user: 1
+skip_button: false
+targets:
+- <img src='/static/targets/i022.png' />
+- <img src='/static/targets/i036.png' />
+- <img src='/static/targets/i038.png' />
+- <img src='/static/targets/i040.png' />
+- <img src='/static/targets/i050.png' />
+- <img src='/static/targets/i054.png' />
+- <img src='/static/targets/i070.png' />
+- <img src='/static/targets/i072.png' />
+- <img src='/static/targets/i074.png' />
+- <img src='/static/targets/i076.png' />
+- <img src='/static/targets/i088.png' />
+- <img src='/static/targets/i090.png' />
+- <img src='/static/targets/i092.png' />
+- <img src='/static/targets/i098.png' />
+- <img src='/static/targets/i102.png' />
+- <img src='/static/targets/i112.png' />
+- <img src='/static/targets/i114.png' />
+- <img src='/static/targets/i116.png' />
+- <img src='/static/targets/i124.png' />
+- <img src='/static/targets/i126.png' />
+- <img src='/static/targets/i130.png' />
+- <img src='/static/targets/i132.png' />
+- <img src='/static/targets/i136.png' />
+- <img src='/static/targets/i140.png' />
+- <img src='/static/targets/i142.png' />
+- <img src='/static/targets/i144.png' />
+- <img src='/static/targets/i150.png' />
+- <img src='/static/targets/i152.png' />
+- <img src='/static/targets/i156.png' />
+- <img src='/static/targets/i160.png' />
+- <img src='/static/targets/i184.png' />
+- <img src='/static/targets/i194.png' />
+- <img src='/static/targets/i200.png' />
+- <img src='/static/targets/i208.png' />
+- <img src='/static/targets/i210.png' />
+- <img src='/static/targets/i220.png' />
+- <img src='/static/targets/i230.png' />
+- <img src='/static/targets/i234.png' />
+- <img src='/static/targets/i242.png' />
+- <img src='/static/targets/i248.png' />
+- <img src='/static/targets/i250.png' />
+- <img src='/static/targets/i252.png' />
+- <img src='/static/targets/i254.png' />
+- <img src='/static/targets/i256.png' />
+- <img src='/static/targets/i268.png' />
+- <img src='/static/targets/i270.png' />
+- <img src='/static/targets/i312.png' />
+- <img src='/static/targets/i322.png' />
+- <img src='/static/targets/i324.png' />
+- <img src='/static/targets/i326.png' />
+- <img src='/static/targets/i330.png' />
+- <img src='/static/targets/i336.png' />
+- <img src='/static/targets/i338.png' />
+- <img src='/static/targets/i340.png' />
+- <img src='/static/targets/i344.png' />
+- <img src='/static/targets/i346.png' />
+- <img src='/static/targets/i368.png' />
+- <img src='/static/targets/i378.png' />
+- <img src='/static/targets/i386.png' />
+- <img src='/static/targets/i388.png' />
+- <img src='/static/targets/i394.png' />
+- <img src='/static/targets/i398.png' />
+- <img src='/static/targets/i414.png' />
+- <img src='/static/targets/i420.png' />
+- <img src='/static/targets/i422.png' />
+- <img src='/static/targets/i428.png' />
+- <img src='/static/targets/i430.png' />
+- <img src='/static/targets/i438.png' />
+- <img src='/static/targets/i446.png' />
+- <img src='/static/targets/i454.png' />
+- <img src='/static/targets/i462.png' />
+- <img src='/static/targets/i466.png' />
+- <img src='/static/targets/i470.png' />
+- <img src='/static/targets/i494.png' />
+- <img src='/static/targets/i500.png' />
+- <img src='/static/targets/i512.png' />
+- <img src='/static/targets/i518.png' />
+- <img src='/static/targets/i522.png' />
+- <img src='/static/targets/i524.png' />
+- <img src='/static/targets/i526.png' />
+- <img src='/static/targets/i528.png' />
+- <img src='/static/targets/i544.png' />
+- <img src='/static/targets/i550.png' />
+- <img src='/static/targets/i552.png' />
+- <img src='/static/targets/i558.png' />
+- <img src='/static/targets/i562.png' />
+- <img src='/static/targets/i566.png' />
+- <img src='/static/targets/i572.png' />
+- <img src='/static/targets/i592.png' />
+- <img src='/static/targets/i598.png' />

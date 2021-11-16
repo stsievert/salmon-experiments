@@ -35,7 +35,6 @@ def fit_estimator(
     ident: str,
     X_train: np.ndarray,
     X_test: np.ndarray,
-    em_init: np.ndarray,
     n: int,
     d: int,
     num_ans: int,
@@ -112,7 +111,7 @@ def fit_estimator(
         **est_kwargs,
         **meta,
     }
-    est.fit(X_train, X_test, embedding=em_init)
+    est.fit(X_train, X_test)
     return est, meta
 
 
@@ -252,13 +251,6 @@ def _get_ground_truth(T: Set[int], num) -> np.ndarray:
     return X
 
 
-def _get_em_init(n: int, d: int) -> np.ndarray:
-    with open(f"io/initial/n={n}-d={d}.json", "r") as f:
-        raw = json.load(f)
-    em = np.array(raw["em"])
-    return em
-
-
 def _prepare_jobs(n):
     DIR = Path("io/responses")
     X_trains = {}
@@ -296,8 +288,6 @@ def _prepare_jobs(n):
         MAX_EPOCHS = 1000
         static["verbose"] = 200
 
-    em_inits = {(n, d): _get_em_init(n, d) for n in [30, 90] for d in [1, 2]}
-
     active_searches = [
         dict(
             X_train=X_train,
@@ -306,7 +296,6 @@ def _prepare_jobs(n):
             noise_model=nm,
             meta={"fname": fname, "n": n},
             max_epochs=MAX_EPOCHS,
-            em_init=_get_em_init(n, d),
             n=n,
             d=d,
             **_get_kwargs(nm),
@@ -326,7 +315,6 @@ def _prepare_jobs(n):
             max_epochs=MAX_EPOCHS // 5,
             sampling="random",
             shuffle_seed=k,
-            em_init=_get_em_init(n, d),
             d=d,
             n=n,
             **_get_kwargs(nm),
